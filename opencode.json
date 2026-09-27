@@ -1,0 +1,62 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": true,
+  "instructions": ["AGENTS.md"],
+  "agent": {
+    "build": {
+      "description": "Execução padrão do dia a dia: código, migration, teste, edge function.",
+      "mode": "primary",
+      "prompt": "{file:./.opencode/agent/build.md}",
+      "steps": 60
+    },
+    "dev-backend": {
+      "description": "Backend, tasks/state machine, migrations SQL, RLS. Use para app/ e supabase/migrations/.",
+      "mode": "subagent",
+      "prompt": "{file:./.opencode/agent/dev-backend.md}",
+      "steps": 45
+    },
+    "dev-frontend": {
+      "description": "Dashboard Jinja2 + HTMX, org chart ao vivo, Block Kit do Slack. Sem build step.",
+      "mode": "subagent",
+      "prompt": "{file:./.opencode/agent/dev-frontend.md}",
+      "steps": 40
+    },
+    "dev-infra": {
+      "description": "Coolify, Supabase self-hosted, Dockerfiles, runtimes de CLI, CI. SEM push e SEM deploy de produção sem HITL do owner.",
+      "mode": "subagent",
+      "prompt": "{file:./.opencode/agent/dev-infra.md}",
+      "steps": 35
+    },
+    "dev-reviewer": {
+      "description": "Revisão independente. Backend diferente do autor. edit: denegado por padrão — só aponta problema, não edita.",
+      "mode": "subagent",
+      "prompt": "{file:./.opencode/agent/dev-reviewer.md}",
+      "steps": 30
+    },
+    "policy-guard": {
+      "description": "Policy engine, guardrails, anti-alucinação, RLS, RBAC, can_decide, agent_runs/usage. bash: denegado. Qualquer mudança aqui é HITL do owner.",
+      "mode": "subagent",
+      "prompt": "{file:./.opencode/agent/policy-guard.md}",
+      "steps": 30
+    },
+    "eval-writer": {
+      "description": "Escreve os casos do eval set por role (rubric em PT-BR, código/identificadores em English). Cresce a lista pelos casos que falham.",
+      "mode": "subagent",
+      "prompt": "{file:./.opencode/agent/eval-writer.md}",
+      "steps": 35
+    }
+  },
+  "permission": {
+    "bash": {
+      "rm -rf *": "deny",
+      "git push*": "ask",
+      "git commit*": "ask",
+      "curl *": "ask",
+      "docker *": "ask",
+      "*": "allow"
+    },
+    "external_directory": {
+      "*": "deny"
+    }
+  }
+}

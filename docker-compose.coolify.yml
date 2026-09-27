@@ -1,0 +1,38 @@
+# Local development only. Production is Coolify: the Supabase service there is the source of
+# truth and this file's `db` exists so a developer can run the same migrations locally.
+#
+# There is no local Supabase here on purpose — PostgREST, Kong and GoTrue are exactly what
+# Coolify runs for us, and a second approximation of the auth layer is a second thing to break.
+
+services:
+  db:
+    image: supabase/postgres:15.8.1.060
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      # Matches the roles the migration grants to, so a local run exercises the same paths.
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  db-data:
