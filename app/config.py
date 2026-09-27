@@ -30,10 +30,19 @@ class Settings(BaseSettings):
     # Self-hosted Supabase: reachable as `db:5432` from inside the Coolify network.
     database_url: str = "postgresql://postgres:postgres@localhost:5432/postgres"
 
-    # PostgREST through Kong (tenant-scoped reads with RLS applied).
-    # Self-hosted Supabase: `api-gw:8000` is the internal alias of the Kong service.
+    # PostgREST base URL. With Kong in front (Wave 2) this is the gateway and paths carry
+    # the `/rest/v1` prefix; talking to PostgREST directly (Wave 1 trimmed stack) the prefix
+    # MUST be empty, because PostgREST serves tables at `/` and `/rest/v1/...` 404s.
+    # Verified the loud way: the app answered ready:true with all counts None for an hour
+    # because it was requesting a Kong path from a Kongless backend.
     supabase_url: str = "http://api-gw:8000"
+    supabase_path_prefix: str = "/rest/v1"
     supabase_anon_key: str = ""
+    # Service key: SERVER SECRET, never leaves the container, never reaches a browser. Used only
+    # by the operator probe below, because this dashboard IS the owner view: it shows platform
+    # truth, not a tenant's view. Tenant-scoped reads arrive with Supabase Auth in Wave 2, via
+    # the user's own JWT — not through this key.
+    supabase_service_key: str = ""
 
     # Directory of idempotent .sql migrations, applied in filename order on boot.
     migrations_dir: str = "supabase/migrations"

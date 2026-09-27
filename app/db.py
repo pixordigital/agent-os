@@ -74,6 +74,7 @@ class Database:
     def __init__(self) -> None:
         self._pool: asyncpg.Pool | None = None
         self._http: httpx.AsyncClient | None = None
+        self._svc: httpx.AsyncClient | None = None
 
     async def connect(self) -> None:
         settings = get_settings()
@@ -82,16 +83,39 @@ class Database:
             min_size=1,
             max_size=5,  # ponytail: one api container, low concurrency. Raise with replicas.
         )
+        # Both headers, on purpose. `apikey` is the Kong-layer convention; `Authorization:
+        # Bearer` is what PostgREST itself requires to actually switch to the JWT role — verified
+        # on the wire against postgrest v14.6, where `apikey` alone leaves the request running as
+        # `authenticator` and every table denies it. Sending both keeps Kong (Wave 2) and direct
+        # PostgREST working with zero branching.
         self._http = httpx.AsyncClient(
             base_url=settings.supabase_url,
             timeout=5.0,
-            headers={"apikey": settings.supabase_anon_key},
+            headers={
+                "apikey": settings.supabase_anon_key,
+                "Authorization": f"Bearer {settings.supabase_anon_key}",
+            },
+        )
+        self._svc = httpx.AsyncClient(
+            base_url=settings.supabase_url,
+            timeout=5.0,
+            headers={
+                "apikey": settings.supabase_service_key,
+                "Authorization": f"Bearer {settings.supabase_service_key}",
+                # Ask for the real total: without it an empty table answers `Content-Range: */*`,
+                # and `int("*")` is a ValueError that the blanket except below would swallow into
+                # a None — this exact line cost an hour of debugging against a live stack.
+                "Prefer": "count=exact",
+            },
         )
 
     async def disconnect(self) -> None:
         if self._http is not None:
             await self._http.aclose()
             self._http = None
+        if self._svc is not None:
+            await self._svc.aclose()
+            self._svc = None
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
@@ -107,6 +131,17 @@ class Database:
         if self._http is None:
             raise RuntimeError("Database.connect() was not awaited")
         return self._http
+
+    @property
+    def svc(self) -> httpx.AsyncClient:
+        """Owner-view client. Service key, BYPASSRLS, never exposed to browsers.
+
+        Used only by the operator probe. It answers "how much data exists", never "what may
+        this tenant see" — those are different questions and this client only answers the first.
+        """
+        if self._svc is None:
+            raise RuntimeError("Database.connect() was not awaited")
+        return self._svc
 
     # ---------------------------------------------------------------- migrations
 
@@ -191,7 +226,8 @@ class Database:
             health.migrations_pending = sorted(all_versions - set(health.migrations_applied))
 
         try:
-            response = await self.http.get("/rest/v1/")
+            prefix = get_settings().supabase_path_prefix.rstrip("/") or "/"
+            response = await self.http.get(prefix)
             health.postgrest_ok = response.status_code < 500
             if not health.postgrest_ok:
                 health.detail = f"postgrest: HTTP {response.status_code}"
@@ -203,19 +239,28 @@ class Database:
         return health
 
     async def count(self, table: str) -> int | None:
-        """Row count through PostgREST, so the count goes through RLS like any other read.
+        """Owner-view row count through PostgREST with the service key.
+
+        This answers "how much data exists on the platform" for the operator dashboard — not
+        "what may this tenant see". Tenant-scoped reads go through the user's own JWT (Wave 2),
+        never through this client. A role=anon JWT would be *correctly* denied here by the RLS
+        FORCE policy, which is why the probe does not use it.
 
         Returns None on failure instead of 0. A zero that means "could not reach the database"
         is the kind of number that ends up on a dashboard and gets believed.
         """
         try:
-            response = await self.http.get(
-                f"/rest/v1/{table}", params={"select": "id", "limit": "1"}
+            prefix = get_settings().supabase_path_prefix.rstrip("/")
+            response = await self.svc.get(
+                f"{prefix}/{table}", params={"select": "id", "limit": "1"}
             )
             response.raise_for_status()
             content_range = response.headers.get("content-range", "")
             if "/" in content_range:
-                return int(content_range.split("/")[-1])
+                total = content_range.split("/")[-1]
+                # `*/*` is a valid range for an empty result; only digits are a count.
+                if total.isdigit():
+                    return int(total)
             return len(response.json())
         except Exception:  # noqa: BLE001
             return None

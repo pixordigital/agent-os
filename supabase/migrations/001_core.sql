@@ -378,8 +378,13 @@ CREATE OR REPLACE FUNCTION app_private.row_visible(p_org_id uuid, p_team_id uuid
 -- Postgres, not by reading it. Owning the function by a BYPASSRLS role breaks the cycle, since
 -- the read inside it is no longer subject to the policy that invoked it.
 --
+-- Two hard requirements for the ALTER to work, both found the loud way against supabase/postgres
+-- (where the app role is NOT superuser, unlike plain Postgres):
+--   1. the executor must be a member of service_role (bootstrap: GRANT service_role TO postgres);
+--   2. service_role must hold CREATE on the schema, because the new owner needs it.
 -- Guarded because plain Postgres (local dev) has no service_role, and there the cycle does not
 -- arise for lack of FORCE.
+GRANT CREATE ON SCHEMA app_private TO service_role;
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
@@ -395,7 +400,13 @@ $$;
 -- Granting USAGE is safe: these functions return booleans derived from the caller's own session
 -- settings, and `is_ceo()` tells the caller only what they could already see by reading their
 -- own roles. The schema stays out of PostgREST's exposed list, so nothing is *listable*.
-GRANT USAGE ON SCHEMA app_private TO authenticated, service_role;
+--
+-- `anon` is on this list ON PURPOSE and it is the easiest line in this file to "fix" by
+-- deleting. RLS policy expressions execute as the querying role, and an unauthenticated
+-- PostgREST request runs as `anon` — without USAGE here, every anonymous read fails with
+-- "permission denied for schema app_private" AFTER the JWT validated, which looks exactly
+-- like a broken key and sends you debugging the wrong layer for an hour.
+GRANT USAGE ON SCHEMA app_private TO anon, authenticated, service_role;
 
 -- =====================================================================================
 -- RLS: one policy per table, org AND team scoped
@@ -495,7 +506,27 @@ CREATE POLICY org_roles_read ON public.org_roles FOR SELECT
 
 REVOKE UPDATE, DELETE ON public.audit_logs FROM authenticated, anon;
 
+-- service_role is the server-side role with BYPASSRLS. That flag skips the *policy* check, not
+-- the *grant* check: a role with no GRANT gets "permission denied" even with bypass enabled.
+-- Without these grants, server-side seeding, admin tooling and the orchestrator's own writes all
+-- fail — which is the failure a trimmed stack (no official init scripts) hits first.
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- PostgREST resolves table names through the schema, so every querying role needs USAGE on it.
+-- USAGE only — never CREATE: Supabase deliberately keeps CREATE off `public` so that a
+-- compromised tenant credential cannot create objects in the application schema. Without this,
+-- every INSERT/SELECT as `authenticated` fails with "permission denied for schema public",
+-- which is exactly what a trimmed stack (no official init scripts) hits on first use.
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role, authenticator;
+
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
+-- service_role gets the same future coverage: without it, every new table created by a later
+-- migration would be unreadable server-side until someone noticed. Same rule, no drift.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO service_role;

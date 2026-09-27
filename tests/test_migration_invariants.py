@@ -194,6 +194,29 @@ def test_audit_log_is_append_only():
     assert "REVOKE UPDATE, DELETE ON public.audit_logs" in SQL
 
 
+def test_service_role_has_table_grants():
+    """BYPASSRLS skips the policy check, NOT the grant check: without GRANTs, every server-side
+    write fails with plain "permission denied" — including the orchestrator's own.
+    """
+    assert "GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role" in SQL
+
+
+def test_schema_usage_is_granted_but_create_is_not():
+    """PostgREST resolves table names through the schema (needs USAGE); USAGE-without-CREATE is
+    the shape that keeps a compromised tenant credential from creating objects.
+    """
+    assert "GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role, authenticator" in SQL
+    assert "GRANT CREATE ON SCHEMA public" not in SQL
+
+
+def test_policy_helpers_are_callable_by_every_querying_role():
+    """RLS policy expressions execute as the querying role — including `anon` for unauthenticated
+    PostgREST requests. Without USAGE here, anonymous reads fail AFTER the JWT validated, which
+    looks exactly like a broken key. This exact line was the bug; the test pins it.
+    """
+    assert "GRANT USAGE ON SCHEMA app_private TO anon, authenticated, service_role" in SQL
+
+
 def test_anon_role_is_denied_everywhere():
     """The unauthenticated Postgres role must not read tenant data even if PostgREST is sloppy.
 
