@@ -2,7 +2,12 @@
 {% block title %}AgentOS — Início{% endblock %}
 {% block body %}
 <h1>Início</h1>
-<div class="sub">Plataforma de agentes autônomos · Slack como interface · porta <code>:{{ port }}</code></div>
+<div class="sub">Sua frota de agentes, num relance · <code>:{{ port }}</code></div>
+
+<h2>Frota</h2>
+<div class="fleet" id="fleet">
+  <span class="dim">…</span>
+</div>
 
 <h2>Saúde</h2>
 <div class="grid" id="health">
@@ -12,7 +17,7 @@
   <div class="card"><div class="k">Migrations pendentes</div><div class="v dim">…</div></div>
 </div>
 
-<h2>Agentes <span class="dim" style="text-transform:none;letter-spacing:0">· <a href="/agents">gerenciar</a></span></h2>
+<h2> Agentes <span class="dim" style="font-weight:400">· <a href="/agents">gerenciar</a></span></h2>
 <div class="grid" id="agentsum">
   <div class="card"><div class="k">Total</div><div class="v dim">…</div></div>
   <div class="card"><div class="k">Ativos</div><div class="v dim">…</div></div>
@@ -21,34 +26,39 @@
 </div>
 <div class="note" id="workersnote" style="display:none"></div>
 
-<h2>Times <span class="dim" style="text-transform:none;letter-spacing:0">· <a href="/teams">gerenciar</a></span></h2>
-<div class="card"><table id="teamtable">
-  <tr><th>time</th><th>agentes</th><th>execuções 24h</th><th>custo 24h</th></tr>
-  <tr><td colspan="4" class="dim">…</td></tr>
+<h2>Times <span class="dim" style="font-weight:400">· <a href="/teams">gerenciar</a></span></h2>
+<div class="card" style="padding:4px 15px"><table class="cardtable" id="teamtable">
+  <thead><tr><th>Time</th><th>Agentes</th><th>Execuções 24h</th><th>Custo 24h</th></tr></thead>
+  <tbody><tr><td colspan="4" class="dim">…</td></tr></tbody>
 </table></div>
-
-<h2>Ondas de entrega</h2>
-<ol style="padding-left:18px;margin:0;color:var(--bone-dim)">
-  <li>1 — base: tasks + árvore + state machine + lease + idempotência, policies, pessoas, RLS por org e time</li>
-  <li>2 — executar: agente <code>native</code>, intake Slack, orchestrator, org chart ao vivo</li>
-  <li>3 — backends: adapter <code>Backend</code> provado com 1 CLI</li>
-  <li>4 — os 4 CLIs: permission profile por role, sandbox, <code>--bare</code></li>
-  <li>5 — tempo: departments, roles, modelo por agente, eval harness, budgets</li>
-  <li>6 — teu comando: manager loop, backlog + planos dia/semana, degradação + 6 ações, dashboards por time</li>
-  <li>7 — governança: reuniões, minutos com <code>source_quote</code>, relay</li>
-  <li>8 — vender: billing, onboarding self-serve</li>
-</ol>
 {% endblock %}
 {% block scripts %}
 <script>
   // Polls /api/status every 5s. Polling stays as the fallback even after Realtime lands in
   // Wave 2 — an operator view that dies with the websocket is worse than one that is 5s stale.
   const money = (n) => 'R$ ' + Number(n).toFixed(2).replace('.', ',');
+  const dotFor = (a) => {
+    if (a.status === 'disabled') return 'bad';
+    if (a.status === 'paused') return 'warn';
+    if (a.runtime_state === 'busy') return 'run';
+    if (a.status === 'active') return 'ok';
+    return '';
+  };
   async function tick() {
     let d;
     try { d = await (await fetch('/api/status')).json(); }
     catch { return; }
     const h = d.health, ok = h.ready;
+    const live = document.getElementById('livedot');
+    if (live) live.className = 'livedot ' + (ok ? 'ok' : 'bad');
+
+    document.getElementById('fleet').innerHTML = (d.summary.agents.map(a => `
+      <a class="chip" href="/agents/${a.id}">
+        <span class="dot ${dotFor(a)}"></span>${a.name}
+        <small>${a.runs_24h || 0} exec</small>
+      </a>`).join('') ||
+      `<span class="dim">Nenhum agente. <a href="/agents#criar">Criar o primeiro</a>.</span>`);
+
     document.getElementById('health').innerHTML = `
       <div class="card"><div class="k">Estado</div>
         <div class="v ${ok ? 'ok' : 'bad'}">${ok ? 'pronto' : 'degradado'}</div>
@@ -77,12 +87,14 @@
       const members = s.agents.filter(a => a.team_id === t.id);
       const runs = members.reduce((n, a) => n + (a.runs_24h || 0), 0);
       const cost = members.reduce((n, a) => n + (a.cost_24h || 0), 0);
-      return `<tr><td><a class="plain" href="/teams">${t.name}</a></td>
-        <td>${members.length}</td><td>${runs}</td><td>${money(cost)}</td></tr>`;
+      return `<tr><td data-label="Time"><a class="plain" href="/teams">${t.name}</a></td>
+        <td data-label="Agentes">${members.length}</td><td data-label="Execuções 24h">${runs}</td>
+        <td data-label="Custo 24h">${money(cost)}</td></tr>`;
     }).join('');
     document.getElementById('teamtable').innerHTML =
-      `<tr><th>time</th><th>agentes</th><th>execuções 24h</th><th>custo 24h</th></tr>` +
-      (rows || `<tr><td colspan="4" class="dim">Nenhum time ainda. <a href="/teams">Criar o primeiro</a>.</td></tr>`);
+      `<thead><tr><th>Time</th><th>Agentes</th><th>Execuções 24h</th><th>Custo 24h</th></tr></thead><tbody>` +
+      (rows || `<tr><td colspan="4" class="dim">Nenhum time ainda. <a href="/teams">Criar o primeiro</a>.</td></tr>`) +
+      `</tbody>`;
   }
   tick();
   setInterval(tick, 5000);

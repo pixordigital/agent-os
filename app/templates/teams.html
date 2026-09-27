@@ -7,20 +7,22 @@
 <div class="cols">
 <div>
   {% for t in teams %}
-  <h2>{{ t.name }} <span class="dim" style="text-transform:none;letter-spacing:0"><code>{{ t.key }}</code></span></h2>
-  <div class="card"><table>
-    <tr><th>agente</th><th>backend / modelo</th><th>estado</th><th>24h</th></tr>
+  <h2>{{ t.name }} <span class="dim" style="font-weight:400"><code>{{ t.key }}</code></span></h2>
+  <div class="card" style="padding:4px 15px"><table class="cardtable">
+    <thead><tr><th>Agente</th><th>Backend / modelo</th><th>Estado</th><th>24h</th></tr></thead>
+    <tbody>
     {% for a in agents_by_team.get(t.id, []) %}
     <tr>
-      <td><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a><br>
+      <td data-label="Agente"><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a>
         <span class="dim">{{ a.kind }}</span></td>
-      <td><code>{{ a.backend }}</code><br><span class="dim">{{ a.model or '—' }}</span></td>
-      <td>{% if a.status == 'active' %}<span class="ok">ativo</span>{% elif a.status == 'paused' %}<span class="warn">pausado</span>{% else %}<span class="dim">{{ a.status }}</span>{% endif %}</td>
-      <td>{{ a.runs_24h or 0 }} exec<br><span class="dim">R$ {{ '%.2f'|format(a.cost_24h or 0)|replace('.', ',') }}</span></td>
+      <td data-label="Backend / modelo"><code>{{ a.backend }}</code><br><span class="dim">{{ a.model or '—' }}</span></td>
+      <td data-label="Estado">{% if a.status == 'active' %}<span class="ok">ativo</span>{% elif a.status == 'paused' %}<span class="warn">pausado</span>{% else %}<span class="dim">{{ a.status }}</span>{% endif %}</td>
+      <td data-label="24h">{{ a.runs_24h or 0 }} exec<br><span class="dim">R$ {{ '%.2f'|format(a.cost_24h or 0)|replace('.', ',') }}</span></td>
     </tr>
     {% else %}
     <tr><td colspan="4" class="dim">Sem agentes neste time.</td></tr>
     {% endfor %}
+    </tbody>
   </table></div>
   {% else %}
   <div class="card dim">Nenhum time ainda. Crie o primeiro ao lado — sugiro <code>dev</code> e <code>comercial</code>.</div>
@@ -28,15 +30,17 @@
 
   {% if unassigned %}
   <h2>Sem time (nível da empresa)</h2>
-  <div class="card"><table>
-    <tr><th>agente</th><th>backend / modelo</th><th>estado</th></tr>
+  <div class="card" style="padding:4px 15px"><table class="cardtable">
+    <thead><tr><th>Agente</th><th>Backend / modelo</th><th>Estado</th></tr></thead>
+    <tbody>
     {% for a in unassigned %}
     <tr>
-      <td><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a></td>
-      <td><code>{{ a.backend }}</code> <span class="dim">{{ a.model or '—' }}</span></td>
-      <td>{{ a.status }}</td>
+      <td data-label="Agente"><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a></td>
+      <td data-label="Backend / modelo"><code>{{ a.backend }}</code> <span class="dim">{{ a.model or '—' }}</span></td>
+      <td data-label="Estado">{{ a.status }}</td>
     </tr>
     {% endfor %}
+    </tbody>
   </table></div>
   {% endif %}
 </div>
@@ -68,12 +72,14 @@
   </div>
   {% if departments %}
   <h2>Departamentos</h2>
-  <div class="card"><table>
-    <tr><th>nome</th><th>missão</th></tr>
+  <div class="card" style="padding:4px 15px"><table class="cardtable">
+    <thead><tr><th>Nome</th><th>Missão</th></tr></thead>
+    <tbody>
     {% for d in departments %}
-    <tr><td><strong>{{ d.name }}</strong><br><span class="dim"><code>{{ d.key }}</code></span></td>
-      <td class="dim">{{ d.mission or '—' }}</td></tr>
+    <tr><td data-label="Nome"><strong>{{ d.name }}</strong><br><span class="dim"><code>{{ d.key }}</code></span></td>
+      <td data-label="Missão" class="dim">{{ d.mission or '—' }}</td></tr>
     {% endfor %}
+    </tbody>
   </table></div>
   {% endif %}
 </div>

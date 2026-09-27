@@ -7,14 +7,14 @@
 <div class="cols">
 <div>
   <h2>Todos</h2>
-  <div class="card">
-    <table hx-get="/agents/table" hx-trigger="every 15s" id="agentstable">
+  <div class="card" style="padding:4px 15px">
+    <table class="cardtable" hx-get="/agents/table" hx-trigger="every 15s" id="agentstable">
       {% include "agents_table.html" %}
     </table>
   </div>
 </div>
 <div>
-  <h2>Criar agente</h2>
+  <h2 id="criar">Criar agente</h2>
   <div class="card">
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
     <form class="block" method="post" action="/agents">

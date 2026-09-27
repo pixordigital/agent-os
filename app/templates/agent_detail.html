@@ -22,30 +22,34 @@
   {% endif %}
 
   <h2>Últimas execuções</h2>
-  <div class="card"><table>
-    <tr><th>quando</th><th>modelo</th><th>ok</th><th>tokens</th><th>custo</th></tr>
+  <div class="card" style="padding:4px 15px"><table class="cardtable">
+    <thead><tr><th>Quando</th><th>Modelo</th><th>Ok</th><th>Tokens</th><th>Custo</th></tr></thead>
+    <tbody>
     {% for r in runs %}
     <tr>
-      <td>{{ r.created_at[:16].replace('T', ' ') }}</td>
-      <td><code>{{ r.model }}</code></td>
-      <td>{% if r.success %}<span class="ok">sim</span>{% elif r.success is none %}<span class="dim">?</span>{% else %}<span class="bad">não</span>{% endif %}</td>
-      <td>{{ (r.tokens_in or 0) + (r.tokens_out or 0) }}</td>
-      <td>R$ {{ '%.4f'|format(r.cost_brl or 0)|replace('.', ',') }}</td>
+      <td data-label="Quando">{{ r.created_at[:16].replace('T', ' ') }}</td>
+      <td data-label="Modelo"><code>{{ r.model }}</code></td>
+      <td data-label="Ok">{% if r.success %}<span class="ok">sim</span>{% elif r.success is none %}<span class="dim">?</span>{% else %}<span class="bad">não</span>{% endif %}</td>
+      <td data-label="Tokens">{{ (r.tokens_in or 0) + (r.tokens_out or 0) }}</td>
+      <td data-label="Custo">R$ {{ '%.4f'|format(r.cost_brl or 0)|replace('.', ',') }}</td>
     </tr>
     {% else %}
     <tr><td colspan="5" class="dim">Nenhuma execução registrada.</td></tr>
     {% endfor %}
+    </tbody>
   </table></div>
 
   <h2>Tarefas atribuídas</h2>
-  <div class="card"><table>
-    <tr><th>tipo</th><th>estado</th><th>atualizada</th></tr>
+  <div class="card" style="padding:4px 15px"><table class="cardtable">
+    <thead><tr><th>Tipo</th><th>Estado</th><th>Atualizada</th></tr></thead>
+    <tbody>
     {% for t in tasks %}
-    <tr><td><code>{{ t.type }}</code></td><td>{{ t.status }}</td>
-      <td>{{ t.updated_at[:16].replace('T', ' ') }}</td></tr>
+    <tr><td data-label="Tipo"><code>{{ t.type }}</code></td><td data-label="Estado">{{ t.status }}</td>
+      <td data-label="Atualizada">{{ t.updated_at[:16].replace('T', ' ') }}</td></tr>
     {% else %}
     <tr><td colspan="3" class="dim">Nenhuma tarefa atribuída.</td></tr>
     {% endfor %}
+    </tbody>
   </table></div>
 </div>
 
