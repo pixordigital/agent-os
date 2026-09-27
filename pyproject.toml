@@ -7,6 +7,9 @@ dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "jinja2>=3.1",
+  # Form parsing for the operator console's HTML forms. Without it every POSTed form 500s at
+  # route registration — the app does not even boot, which is how this was found.
+  "python-multipart>=0.0.18",
   "asyncpg>=0.30",
   "httpx>=0.27",
   "pydantic>=2.9",

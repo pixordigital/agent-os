@@ -1,0 +1,67 @@
+{% extends "layout.html" %}
+{% block title %}AgentOS — Agentes{% endblock %}
+{% block body %}
+<h1>Agentes</h1>
+<div class="sub">Criar, pausar e acompanhar. Execução chega na onda 2 — até lá, a tabela mostra configuração + o que já foi registrado.</div>
+
+<div class="cols">
+<div>
+  <h2>Todos</h2>
+  <div class="card">
+    <table hx-get="/agents/table" hx-trigger="every 15s" id="agentstable">
+      {% include "agents_table.html" %}
+    </table>
+  </div>
+</div>
+<div>
+  <h2>Criar agente</h2>
+  <div class="card">
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form class="block" method="post" action="/agents">
+      <label for="f-name">Nome</label>
+      <input type="text" id="f-name" name="name" required minlength="2" maxlength="120"
+             placeholder="Ex.: Qualificador Comercial" value="{{ form.name or '' }}">
+      <label for="f-key">Identificador</label>
+      <input type="text" id="f-key" name="key" required maxlength="64"
+             placeholder="Ex.: crm-qualificador" value="{{ form.key or '' }}">
+      <label for="f-team">Time</label>
+      <select id="f-team" name="team_id">
+        <option value="">— sem time (nível da empresa) —</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}" {% if form.team_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <label for="f-kind">Papel</label>
+      <select id="f-kind" name="kind">
+        {% for k in kinds %}
+        <option value="{{ k }}" {% if (form.kind or 'worker') == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+      <label for="f-backend">Backend de execução</label>
+      <select id="f-backend" name="backend">
+        {% for b in backends %}
+        <option value="{{ b }}" {% if (form.backend or 'native') == b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+      <div class="note" style="margin:10px 0 0">
+        Só <code>native</code> executa hoje. Os 4 CLIs viram runtimes nas ondas 3–4;
+        escolher outro backend agora é declarar a intenção, não ligar nada.
+      </div>
+      <label for="f-model">Modelo</label>
+      <input type="text" id="f-model" name="model" required maxlength="120"
+             placeholder="Ex.: openrouter/anthropic/claude-sonnet-4" value="{{ form.model or '' }}">
+      <label for="f-fallback">Modelo reserva (opcional)</label>
+      <input type="text" id="f-fallback" name="fallback_model" maxlength="120"
+             placeholder="Ex.: openrouter/google/gemini-2.5-flash" value="{{ form.fallback_model or '' }}">
+      <label for="f-budget">Teto diário em R$ (opcional)</label>
+      <input type="text" id="f-budget" name="budget_brl_day" maxlength="20"
+             placeholder="Ex.: 25.00" value="{{ form.budget_brl_day or '' }}">
+      <label for="f-prompt">System prompt</label>
+      <textarea id="f-prompt" name="system_prompt"
+                placeholder="Missão, regras e limites deste agente. Vira o bloco cacheável do prompt.">{{ form.system_prompt or '' }}</textarea>
+      <div class="btnrow"><button class="btn primary" type="submit">Criar agente</button></div>
+    </form>
+  </div>
+</div>
+</div>
+{% endblock %}

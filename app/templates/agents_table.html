@@ -1,0 +1,30 @@
+<tr><th>agente</th><th>time</th><th>backend / modelo</th><th>estado</th><th>24h</th><th></th></tr>
+{% for a in agents %}
+<tr>
+  <td><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a><br>
+    <span class="dim"><code>{{ a.key }}</code> · {{ a.kind }}</span></td>
+  <td>{{ a.team_name or '<span class="dim">empresa</span>' }}</td>
+  <td><code>{{ a.backend }}</code><br><span class="dim">{{ a.model or '—' }}</span></td>
+  <td>
+    {% if a.status == 'active' %}<span class="ok">ativo</span>
+    {% elif a.status == 'paused' %}<span class="warn">pausado</span>
+    {% elif a.status == 'disabled' %}<span class="bad">desativado</span>
+    {% else %}<span class="dim">rascunho</span>{% endif %}
+    <br><span class="dim">{{ a.runtime_state }}</span>
+  </td>
+  <td>{{ a.runs_24h or 0 }} exec<br><span class="dim">R$ {{ '%.2f'|format(a.cost_24h or 0)|replace('.', ',') }}</span></td>
+  <td>
+    {% if a.status == 'active' %}
+    <form method="post" action="/agents/{{ a.id }}/pause" style="margin:0">
+      <button class="btn" type="submit">Pausar</button>
+    </form>
+    {% elif a.status in ('paused', 'draft') %}
+    <form method="post" action="/agents/{{ a.id }}/resume" style="margin:0">
+      <button class="btn" type="submit">Ativar</button>
+    </form>
+    {% endif %}
+  </td>
+</tr>
+{% else %}
+<tr><td colspan="6" class="dim">Nenhum agente ainda. Crie o primeiro ao lado.</td></tr>
+{% endfor %}

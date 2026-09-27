@@ -17,12 +17,19 @@ import re
 MIGRATION = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "001_core.sql"
 SQL = MIGRATION.read_text(encoding="utf-8")
 
+MIGRATION_002 = (
+    pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "002_agents.sql"
+).read_text(encoding="utf-8")
+
 EXPECTED_TABLES = {
     "organizations", "teams", "departments", "people", "org_roles", "slack_links",
     "tasks", "task_transitions", "policies", "agent_runs", "audit_logs",
 }
 # Tables whose rows a team lead must not be able to read across teams.
 TEAM_SCOPED = {"departments", "people", "slack_links", "tasks", "agent_runs"}
+# 002_agents.sql must satisfy the same invariants, checked against its own text.
+EXPECTED_TABLES_002 = {"agents"}
+TEAM_SCOPED_002 = {"agents"}
 
 
 def _created_tables() -> set[str]:
@@ -235,3 +242,67 @@ def test_only_ceo_holds_approval_authority():
     # No approval_limit table exists yet: with a consultive lead it has no consumer, and
     # speculative columns are how a product grows a permissions model nobody tested.
     assert not re.search(r"CREATE TABLE IF NOT EXISTS public\.approval_limit", SQL)
+
+
+# ---------------------------------------------------------------------------
+# 002_agents.sql — same invariants, checked against its own text. A new migration that
+# forgets any of these ships a table with no isolation, and the 001 tests would not catch it
+# because they only read 001.
+# ---------------------------------------------------------------------------
+
+def _created_tables_002() -> set[str]:
+    return set(re.findall(r"CREATE TABLE IF NOT EXISTS public\.(\w+)", MIGRATION_002))
+
+
+def test_002_creates_agents():
+    assert _created_tables_002() == EXPECTED_TABLES_002
+
+
+def test_002_agents_is_team_scoped():
+    body_match = re.search(
+        r"CREATE TABLE IF NOT EXISTS public\.agents \((.*?)\n\);", MIGRATION_002, re.DOTALL
+    )
+    assert body_match, "agents definition not found"
+    body = body_match.group(1)
+    assert "org_id" in body
+    assert "team_id" in body
+
+
+def test_002_model_is_mandatory():
+    """An agent without a model is meaningless — the whole product is per-agent model choice."""
+    assert re.search(r"model\s+text NOT NULL", MIGRATION_002)
+
+
+def test_002_separates_admin_state_from_observed_state():
+    """status is what the owner wants; runtime_state is what the worker last reported. Only a
+    worker heartbeat may set runtime_state — otherwise the dashboard shows "running" for a
+    dead agent, which is the lie this column exists to prevent."""
+    assert re.search(r"status\s+text NOT NULL DEFAULT 'draft'", MIGRATION_002)
+    assert re.search(r"runtime_state\s+text NOT NULL DEFAULT 'idle'", MIGRATION_002)
+
+
+def test_002_rls_is_enabled_and_forced():
+    assert "ALTER TABLE public.agents ENABLE ROW LEVEL SECURITY" in MIGRATION_002
+    assert "ALTER TABLE public.agents FORCE ROW LEVEL SECURITY" in MIGRATION_002
+
+
+def test_002_uses_the_same_visibility_predicate():
+    """Not a copy of the predicate — a call to it. Two definitions of "visible" is how a lead
+    ends up seeing another team's agents while tasks stay hidden."""
+    assert "app_private.row_visible(org_id, team_id)" in MIGRATION_002
+    assert MIGRATION_002.count("RETURNS boolean") == 0  # no new predicate defined here
+
+
+def test_002_anon_denied_and_service_role_granted():
+    """BYPPASSRLS skips policy, not grants: without the explicit GRANT, server-side agent
+    management fails exactly like the 001 seeding did before the same line was added there."""
+    assert "REVOKE ALL ON public.agents FROM anon" in MIGRATION_002
+    assert "GRANT SELECT, INSERT, UPDATE, DELETE ON public.agents TO authenticated" in MIGRATION_002
+    assert "GRANT ALL ON public.agents TO service_role" in MIGRATION_002
+
+
+def test_002_is_rerunnable():
+    assert "CREATE TABLE IF NOT EXISTS" in MIGRATION_002
+    assert "CREATE INDEX IF NOT EXISTS" in MIGRATION_002
+    assert "DROP POLICY IF EXISTS" in MIGRATION_002
+    assert not re.search(r"^\s*CREATE TYPE\b", MIGRATION_002, re.MULTILINE)

@@ -18,6 +18,7 @@ WORKDIR /srv/app
 # Dependency layer first: code changes do not invalidate the wheel cache.
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.32" "jinja2>=3.1" \
+      "python-multipart>=0.0.18" \
       "asyncpg>=0.30" "httpx>=0.27" "pydantic>=2.9" "pydantic-settings>=2.6" "arq>=0.26"
 
 COPY app ./app

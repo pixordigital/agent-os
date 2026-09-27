@@ -1,137 +1,90 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AgentOS</title>
-  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
-  <style>
-    /* Dark, no shadows, hairline separators. Contrast >= 12:1 on body text.
-       One accent (brass) reserved for "needs attention" so it never loses meaning. */
-    :root {
-      --ink: #0F1A1C;
-      --ink-raised: #16262A;
-      --bone: #E9E6DE;
-      --bone-dim: #8C9A99;
-      --brass: #B98A45;
-      --line: #23383C;
-      --ok: #4E9A6B;
-      --warn: #C98A3E;
-      --bad: #B4483C;
-      --radius: 2px;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--ink); color: var(--bone);
-      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 24px 96px; }
-    header { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 32px; }
-    h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 6px; }
-    .sub { color: var(--bone-dim); font-size: 13px; }
-    h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
-         color: var(--bone-dim); margin: 40px 0 12px; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .card { border: 1px solid var(--line); border-radius: var(--radius);
-            padding: 16px 18px; background: var(--ink-raised); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-    .k { color: var(--bone-dim); font-size: 12px; margin-bottom: 6px; }
-    .v { font-size: 22px; font-variant-numeric: tabular-nums; }
-    .pill { display: inline-block; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
-            border: 1px solid var(--line); border-radius: var(--radius); padding: 3px 8px;
-            color: var(--bone-dim); }
-    .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
-    .dim { color: var(--bone-dim); }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line);
-             font-variant-numeric: tabular-nums; }
-    th { color: var(--bone-dim); font-weight: 500; font-size: 11px; text-transform: uppercase;
-         letter-spacing: 0.06em; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
-    a { color: var(--brass); }
-    ol.waves { padding-left: 18px; margin: 0; }
-    ol.waves li { margin-bottom: 5px; color: var(--bone-dim); }
-    ol.waves li.done { color: var(--bone); }
-    ol.waves li.now { color: var(--brass); }
-    .foot { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
-            color: var(--bone-dim); font-size: 12px; }
-  </style>
-</head>
-<body>
-<div class="wrap" hx-get="/api/status" hx-trigger="every 5s" hx-swap="none" id="root">
-  <header>
-    <h1>AgentOS</h1>
-    <div class="sub">
-      Plataforma de agentes autônomos · Slack como interface · porta <code>:{{ port }}</code>
-    </div>
-  </header>
+{% extends "layout.html" %}
+{% block title %}AgentOS — Início{% endblock %}
+{% block body %}
+<h1>Início</h1>
+<div class="sub">Plataforma de agentes autônomos · Slack como interface · porta <code>:{{ port }}</code></div>
 
-  <div id="status">
-    <section class="card"><div class="k">Carregando status do Postgres…</div></section>
-  </div>
-
-  <h2>Ondas de entrega</h2>
-  <ol class="waves">
-    <li class="now">1 — base: tasks + árvore + state machine + lease + idempotência, policies, pessoas, RLS por org e time</li>
-    <li>2 — executar: agente <code>native</code>, intake Slack, orchestrator, org chart ao vivo</li>
-    <li>3 — backends: adapter <code>Backend</code> provado com 1 CLI</li>
-    <li>4 — os 4 CLIs: permission profile por role, sandbox, <code>--bare</code></li>
-    <li>5 — tempo: departments, roles, modelo por agente, eval harness, budgets</li>
-    <li>6 — teu comando: manager loop, backlog, planos, degradação, dashboards</li>
-    <li>7 — governança: reuniões, minutos com <code>source_quote</code>, relay</li>
-    <li>8 — vender: billing, onboarding self-serve</li>
-  </ol>
-
-  <div class="foot">
-    Toda migration é aplicada no boot por <code>app/db.py</code> e precisa ser idempotente.
-    Leitura do dashboard passa por PostgREST + RLS — sem API de leitura no backend.
-  </div>
+<h2>Saúde</h2>
+<div class="grid" id="health">
+  <div class="card"><div class="k">Estado</div><div class="v dim">…</div></div>
+  <div class="card"><div class="k">Ambiente</div><div class="v dim">…</div></div>
+  <div class="card"><div class="k">Tabelas com RLS</div><div class="v dim">…</div></div>
+  <div class="card"><div class="k">Migrations pendentes</div><div class="v dim">…</div></div>
 </div>
 
-<script>
-  // Minimal live wiring for Wave 1: poll /api/status and render. Realtime (org chart) is Wave 2.
-  // Polling stays as the fallback even after Realtime lands — an operator view that dies with
-  // the websocket is worse than one that is 5s stale.
-  const el = document.getElementById('status');
-  const fmt = (n) => n === null ? '<span class="warn">sem leitura</span>'
-                      : n === 0   ? '<span class="dim">0</span>' : n;
+<h2>Agentes <span class="dim" style="text-transform:none;letter-spacing:0">· <a href="/agents">gerenciar</a></span></h2>
+<div class="grid" id="agentsum">
+  <div class="card"><div class="k">Total</div><div class="v dim">…</div></div>
+  <div class="card"><div class="k">Ativos</div><div class="v dim">…</div></div>
+  <div class="card"><div class="k">Execuções (24h)</div><div class="v dim">…</div></div>
+  <div class="card"><div class="k">Custo (24h)</div><div class="v dim">…</div></div>
+</div>
+<div class="note" id="workersnote" style="display:none"></div>
 
+<h2>Times <span class="dim" style="text-transform:none;letter-spacing:0">· <a href="/teams">gerenciar</a></span></h2>
+<div class="card"><table id="teamtable">
+  <tr><th>time</th><th>agentes</th><th>execuções 24h</th><th>custo 24h</th></tr>
+  <tr><td colspan="4" class="dim">…</td></tr>
+</table></div>
+
+<h2>Ondas de entrega</h2>
+<ol style="padding-left:18px;margin:0;color:var(--bone-dim)">
+  <li>1 — base: tasks + árvore + state machine + lease + idempotência, policies, pessoas, RLS por org e time</li>
+  <li>2 — executar: agente <code>native</code>, intake Slack, orchestrator, org chart ao vivo</li>
+  <li>3 — backends: adapter <code>Backend</code> provado com 1 CLI</li>
+  <li>4 — os 4 CLIs: permission profile por role, sandbox, <code>--bare</code></li>
+  <li>5 — tempo: departments, roles, modelo por agente, eval harness, budgets</li>
+  <li>6 — teu comando: manager loop, backlog + planos dia/semana, degradação + 6 ações, dashboards por time</li>
+  <li>7 — governança: reuniões, minutos com <code>source_quote</code>, relay</li>
+  <li>8 — vender: billing, onboarding self-serve</li>
+</ol>
+{% endblock %}
+{% block scripts %}
+<script>
+  // Polls /api/status every 5s. Polling stays as the fallback even after Realtime lands in
+  // Wave 2 — an operator view that dies with the websocket is worse than one that is 5s stale.
+  const money = (n) => 'R$ ' + Number(n).toFixed(2).replace('.', ',');
   async function tick() {
     let d;
     try { d = await (await fetch('/api/status')).json(); }
-    catch { el.innerHTML = '<section class="card"><div class="k bad">API inacessível</div></section>'; return; }
-
+    catch { return; }
     const h = d.health, ok = h.ready;
-    const cls = ok ? 'ok' : 'bad';
-    const word = ok ? 'pronto' : 'degradado';
-    const c = d.counts;
-    const rows = Object.entries(c).map(([k, v]) =>
-      `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('');
+    document.getElementById('health').innerHTML = `
+      <div class="card"><div class="k">Estado</div>
+        <div class="v ${ok ? 'ok' : 'bad'}">${ok ? 'pronto' : 'degradado'}</div>
+        <div class="sub" style="margin-top:6px">${h.detail || ''}</div></div>
+      <div class="card"><div class="k">Ambiente</div><div class="v">${d.env}</div></div>
+      <div class="card"><div class="k">Tabelas com RLS</div>
+        <div class="v ${h.rls_enabled_on.length ? 'ok' : 'bad'}">${h.rls_enabled_on.length}</div></div>
+      <div class="card"><div class="k">Migrations pendentes</div>
+        <div class="v ${h.migrations_pending.length ? 'bad' : 'ok'}">${h.migrations_pending.length}</div></div>`;
 
-    el.innerHTML = `
-      <div class="grid">
-        <div class="card"><div class="k">Estado</div>
-          <div class="v ${cls}">${word}</div>
-          <div class="sub" style="margin-top:6px">${h.detail || ''}</div></div>
-        <div class="card"><div class="k">Ambiente</div><div class="v">${d.env}</div></div>
-        <div class="card"><div class="k">RLS em tabelas</div>
-          <div class="v ${h.rls_enabled_on.length ? 'ok' : 'bad'}">${h.rls_enabled_on.length}</div></div>
-        <div class="card"><div class="k">Migrations pendentes</div>
-          <div class="v ${h.migrations_pending.length ? 'bad' : 'ok'}">${h.migrations_pending.length}</div></div>
-      </div>
-      <h2>Tabelas do kernel (leitura via RLS)</h2>
-      <div class="card"><table>
-        <tr><th>tabela</th><th>linhas</th></tr>${rows}
-      </table></div>
-      <div class="row" style="margin-top:16px">
-        <span class="pill"><a href="/docs">openapi</a></span>
-        <span class="pill">/live</span>
-        <span class="pill">/ready</span>
-        <span class="pill">/healthz</span>
-      </div>`;
+    const s = d.summary;
+    document.getElementById('agentsum').innerHTML = `
+      <div class="card"><div class="k">Total</div><div class="v">${s.agent_count}</div></div>
+      <div class="card"><div class="k">Ativos</div>
+        <div class="v ${(s.by_status.active || 0) ? '' : 'dim'}">${s.by_status.active || 0}</div></div>
+      <div class="card"><div class="k">Execuções (24h)</div><div class="v">${s.runs_24h}</div></div>
+      <div class="card"><div class="k">Custo (24h)</div><div class="v">${money(s.cost_24h)}</div></div>`;
+
+    const note = document.getElementById('workersnote');
+    if (s.runs_24h === 0) {
+      note.style.display = '';
+      note.textContent = 'Nenhuma execução registrada nas últimas 24h. Os agentes existem como configuração; a execução chega na onda 2 (worker + Slack). Até lá, todo número aqui é honestamente zero.';
+    } else { note.style.display = 'none'; }
+
+    const rows = s.teams.map(t => {
+      const members = s.agents.filter(a => a.team_id === t.id);
+      const runs = members.reduce((n, a) => n + (a.runs_24h || 0), 0);
+      const cost = members.reduce((n, a) => n + (a.cost_24h || 0), 0);
+      return `<tr><td><a class="plain" href="/teams">${t.name}</a></td>
+        <td>${members.length}</td><td>${runs}</td><td>${money(cost)}</td></tr>`;
+    }).join('');
+    document.getElementById('teamtable').innerHTML =
+      `<tr><th>time</th><th>agentes</th><th>execuções 24h</th><th>custo 24h</th></tr>` +
+      (rows || `<tr><td colspan="4" class="dim">Nenhum time ainda. <a href="/teams">Criar o primeiro</a>.</td></tr>`);
   }
   tick();
   setInterval(tick, 5000);
 </script>
-</body>
-</html>
+{% endblock %}

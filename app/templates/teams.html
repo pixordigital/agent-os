@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+{% block title %}AgentOS — Times{% endblock %}
+{% block body %}
+<h1>Times</h1>
+<div class="sub">Cada time vira um manager + agentes na onda 2. Hoje: estrutura + custo e execução por time.</div>
+
+<div class="cols">
+<div>
+  {% for t in teams %}
+  <h2>{{ t.name }} <span class="dim" style="text-transform:none;letter-spacing:0"><code>{{ t.key }}</code></span></h2>
+  <div class="card"><table>
+    <tr><th>agente</th><th>backend / modelo</th><th>estado</th><th>24h</th></tr>
+    {% for a in agents_by_team.get(t.id, []) %}
+    <tr>
+      <td><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a><br>
+        <span class="dim">{{ a.kind }}</span></td>
+      <td><code>{{ a.backend }}</code><br><span class="dim">{{ a.model or '—' }}</span></td>
+      <td>{% if a.status == 'active' %}<span class="ok">ativo</span>{% elif a.status == 'paused' %}<span class="warn">pausado</span>{% else %}<span class="dim">{{ a.status }}</span>{% endif %}</td>
+      <td>{{ a.runs_24h or 0 }} exec<br><span class="dim">R$ {{ '%.2f'|format(a.cost_24h or 0)|replace('.', ',') }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="dim">Sem agentes neste time.</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <div class="card dim">Nenhum time ainda. Crie o primeiro ao lado — sugiro <code>dev</code> e <code>comercial</code>.</div>
+  {% endfor %}
+
+  {% if unassigned %}
+  <h2>Sem time (nível da empresa)</h2>
+  <div class="card"><table>
+    <tr><th>agente</th><th>backend / modelo</th><th>estado</th></tr>
+    {% for a in unassigned %}
+    <tr>
+      <td><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a></td>
+      <td><code>{{ a.backend }}</code> <span class="dim">{{ a.model or '—' }}</span></td>
+      <td>{{ a.status }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</div>
+<div>
+  <h2>Criar time</h2>
+  <div class="card">
+    {% if team_error %}<div class="err">{{ team_error }}</div>{% endif %}
+    <form class="block" method="post" action="/teams">
+      <label for="t-name">Nome</label>
+      <input type="text" id="t-name" name="name" required minlength="2" placeholder="Ex.: Comercial">
+      <label for="t-key">Identificador</label>
+      <input type="text" id="t-key" name="key" required placeholder="Ex.: comercial">
+      <div class="btnrow"><button class="btn primary" type="submit">Criar time</button></div>
+    </form>
+  </div>
+  <h2>Criar departamento</h2>
+  <div class="card">
+    {% if dept_error %}<div class="err">{{ dept_error }}</div>{% endif %}
+    <form class="block" method="post" action="/departments">
+      <label for="d-name">Nome</label>
+      <input type="text" id="d-name" name="name" required minlength="2" placeholder="Ex.: Vendas">
+      <label for="d-key">Identificador</label>
+      <input type="text" id="d-key" name="key" required placeholder="Ex.: vendas">
+      <label for="d-mission">Missão</label>
+      <textarea id="d-mission" name="mission" style="min-height:70px"
+                placeholder="Para que este departamento existe?"></textarea>
+      <div class="btnrow"><button class="btn primary" type="submit">Criar departamento</button></div>
+    </form>
+  </div>
+  {% if departments %}
+  <h2>Departamentos</h2>
+  <div class="card"><table>
+    <tr><th>nome</th><th>missão</th></tr>
+    {% for d in departments %}
+    <tr><td><strong>{{ d.name }}</strong><br><span class="dim"><code>{{ d.key }}</code></span></td>
+      <td class="dim">{{ d.mission or '—' }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

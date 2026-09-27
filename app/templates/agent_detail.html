@@ -1,0 +1,104 @@
+{% extends "layout.html" %}
+{% block title %}AgentOS — {{ agent.name }}{% endblock %}
+{% block body %}
+<h1>{{ agent.name }}</h1>
+<div class="sub"><code>{{ agent.key }}</code> · {{ agent.kind }} · criado em {{ agent.created_at[:10] }}</div>
+
+<div class="cols">
+<div>
+  <h2>Monitor (24h)</h2>
+  <div class="grid">
+    <div class="card"><div class="k">Execuções</div><div class="v">{{ stats.runs_24h }}</div></div>
+    <div class="card"><div class="k">Sucesso</div>
+      <div class="v {% if stats.success_rate is none %}dim{% elif stats.success_rate >= 0.8 %}{% else %}warn{% endif %}">
+        {{ '%.0f%%'|format(stats.success_rate * 100) if stats.success_rate is not none else '—' }}</div></div>
+    <div class="card"><div class="k">Custo</div>
+      <div class="v">R$ {{ '%.2f'|format(stats.cost_brl_24h)|replace('.', ',') }}</div></div>
+    <div class="card"><div class="k">Cache hit</div>
+      <div class="v dim">{{ '%.0f%%'|format(stats.cache_hit_rate * 100) if stats.cache_hit_rate is not none else '—' }}</div></div>
+  </div>
+  {% if stats.runs_24h == 0 %}
+  <div class="note">Zero execuções registradas. Este agente existe como configuração; a execução chega na onda 2. O zero aqui é ausência de execução, não ausência de leitura.</div>
+  {% endif %}
+
+  <h2>Últimas execuções</h2>
+  <div class="card"><table>
+    <tr><th>quando</th><th>modelo</th><th>ok</th><th>tokens</th><th>custo</th></tr>
+    {% for r in runs %}
+    <tr>
+      <td>{{ r.created_at[:16].replace('T', ' ') }}</td>
+      <td><code>{{ r.model }}</code></td>
+      <td>{% if r.success %}<span class="ok">sim</span>{% elif r.success is none %}<span class="dim">?</span>{% else %}<span class="bad">não</span>{% endif %}</td>
+      <td>{{ (r.tokens_in or 0) + (r.tokens_out or 0) }}</td>
+      <td>R$ {{ '%.4f'|format(r.cost_brl or 0)|replace('.', ',') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="dim">Nenhuma execução registrada.</td></tr>
+    {% endfor %}
+  </table></div>
+
+  <h2>Tarefas atribuídas</h2>
+  <div class="card"><table>
+    <tr><th>tipo</th><th>estado</th><th>atualizada</th></tr>
+    {% for t in tasks %}
+    <tr><td><code>{{ t.type }}</code></td><td>{{ t.status }}</td>
+      <td>{{ t.updated_at[:16].replace('T', ' ') }}</td></tr>
+    {% else %}
+    <tr><td colspan="3" class="dim">Nenhuma tarefa atribuída.</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+
+<div>
+  <h2>Editar</h2>
+  <div class="card">
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form class="block" method="post" action="/agents/{{ agent.id }}">
+      <label for="e-name">Nome</label>
+      <input type="text" id="e-name" name="name" required value="{{ form.name or agent.name }}">
+      <label for="e-team">Time</label>
+      <select id="e-team" name="team_id">
+        <option value="">— sem time (nível da empresa) —</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}" {% if (form.team_id or agent.team_id) == t.id %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <label for="e-backend">Backend de execução</label>
+      <select id="e-backend" name="backend">
+        {% for b in backends %}
+        <option value="{{ b }}" {% if (form.backend or agent.backend) == b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+      <label for="e-model">Modelo</label>
+      <input type="text" id="e-model" name="model" required value="{{ form.model or agent.model }}">
+      <label for="e-fallback">Modelo reserva</label>
+      <input type="text" id="e-fallback" name="fallback_model" value="{{ form.fallback_model if form.fallback_model is defined else agent.fallback_model }}">
+      <label for="e-budget">Teto diário em R$</label>
+      <input type="text" id="e-budget" name="budget_brl_day" value="{{ form.budget_brl_day if form.budget_brl_day is defined else (agent.budget_brl_day or '') }}">
+      <label for="e-prompt">System prompt</label>
+      <textarea id="e-prompt" name="system_prompt">{{ form.system_prompt if form.system_prompt is defined else agent.system_prompt }}</textarea>
+      <div class="btnrow"><button class="btn primary" type="submit">Salvar</button></div>
+    </form>
+  </div>
+  <h2>Estado</h2>
+  <div class="card">
+    <div class="row">
+      <span class="pill">{{ agent.status }}</span>
+      <span class="pill">{{ agent.runtime_state }}</span>
+    </div>
+    <div class="btnrow">
+      {% if agent.status == 'active' %}
+      <form method="post" action="/agents/{{ agent.id }}/pause" style="margin:0">
+        <button class="btn danger" type="submit">Pausar</button>
+      </form>
+      {% else %}
+      <form method="post" action="/agents/{{ agent.id }}/resume" style="margin:0">
+        <button class="btn primary" type="submit">Ativar</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="note">Pausar muda o estado administrativo. O estado observado (<code>runtime_state</code>) só muda por heartbeat do worker — a UI nunca finge execução.</div>
+  </div>
+</div>
+</div>
+{% endblock %}
