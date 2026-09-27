@@ -189,6 +189,33 @@ async def agents_table(request: Request) -> Response:
     return _template("agents_table.html", request, agents=summary["agents"])
 
 
+@app.get("/org", response_class=Response)
+async def org_page(request: Request) -> Response:
+    """Live org chart: orchestrator -> managers -> agents, with observed state per node.
+
+    "Live" today means HTMX polling (fragment below), because the trimmed stack has no
+    Realtime container. The poller stays as the fallback even after Realtime lands in Wave 2.
+    """
+    org_id = await _org_id()
+    summary = await agents_svc.dashboard_summary(org_id)
+    for agent in summary["agents"]:
+        agent["team_name"] = agent.get("team_name")
+    tree = agents_svc.build_tree(summary["agents"])
+    events = await agents_svc.recent_events(org_id, limit=20)
+    return _template(
+        "org.html", request, tab="org", tree=tree, events=events,
+        agent_count=summary["agent_count"],
+    )
+
+
+@app.get("/org/tree", response_class=Response)
+async def org_tree(request: Request) -> Response:
+    """HTMX fragment for the chart, polled every 10s. Same builder as the full page."""
+    org_id = await _org_id()
+    summary = await agents_svc.dashboard_summary(org_id)
+    return _template("org_tree.html", request, tree=agents_svc.build_tree(summary["agents"]))
+
+
 @app.post("/agents", response_class=Response)
 async def agents_create(
     request: Request,
@@ -343,6 +370,22 @@ async def teams_page(
         unassigned=by_team.get("", []),
         departments=departments,
         team_error=team_error, dept_error=dept_error,
+    )
+
+
+@app.get("/teams/{team_id}", response_class=Response)
+async def team_detail_page(request: Request, team_id: str) -> Response:
+    """Team dashboard: members, 24h/7d runs and cost, autonomy mix, models in use, backlog by
+    status, SLA breaches. Every number measured; empty sections say what is missing instead of
+    showing zero as if it meant something."""
+    org_id = await _org_id()
+    try:
+        detail = await agents_svc.team_detail(org_id, team_id)
+    except AgentError:
+        return RedirectResponse("/teams", status_code=303)
+    events = await agents_svc.recent_events(org_id, team_id=team_id, limit=15)
+    return _template(
+        "team_detail.html", request, tab="teams", detail=detail, events=events
     )
 
 

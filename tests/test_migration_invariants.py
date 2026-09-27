@@ -323,3 +323,49 @@ def test_003_adds_temperature_with_range():
     assert "ADD COLUMN IF NOT EXISTS temperature" in MIGRATION_003
     assert "CHECK (temperature >= 0 AND temperature <= 2)" in MIGRATION_003
     assert "DEFAULT 0.7" in MIGRATION_003
+
+
+# ---------------------------------------------------------------------------
+# 004_agent_events.sql — the operational timeline. Append-only like audit_logs,
+# team-scoped like everything else. The org chart reads this table; it is the contract
+# whether the transport is HTMX polling (now) or Realtime (Wave 2+).
+# ---------------------------------------------------------------------------
+
+MIGRATION_004 = (
+    pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "004_agent_events.sql"
+).read_text(encoding="utf-8")
+
+
+def test_004_creates_agent_events_team_scoped():
+    assert re.search(r"CREATE TABLE IF NOT EXISTS public\.agent_events", MIGRATION_004)
+    body_match = re.search(
+        r"CREATE TABLE IF NOT EXISTS public\.agent_events \((.*?)\n\);", MIGRATION_004, re.DOTALL
+    )
+    assert body_match, "agent_events definition not found"
+    body = body_match.group(1)
+    assert "org_id" in body
+    assert "team_id" in body
+    assert "agent_id" in body
+
+
+def test_004_event_kinds_are_closed():
+    """An open text kind column turns the timeline into soup: every consumer filters on kinds
+    it knows, and an unknown kind silently disappears from the chart."""
+    assert "CHECK (kind IN (" in MIGRATION_004
+    for kind in ("created", "status_changed", "heartbeat", "alert_opened", "hitl_pending"):
+        assert f"'{kind}'" in MIGRATION_004, kind
+
+
+def test_004_rls_forced_and_anon_denied():
+    assert "ALTER TABLE public.agent_events ENABLE ROW LEVEL SECURITY" in MIGRATION_004
+    assert "ALTER TABLE public.agent_events FORCE ROW LEVEL SECURITY" in MIGRATION_004
+    assert "app_private.row_visible(org_id, team_id)" in MIGRATION_004
+    assert "REVOKE ALL ON public.agent_events FROM anon" in MIGRATION_004
+    assert "GRANT ALL ON public.agent_events TO service_role" in MIGRATION_004
+
+
+def test_004_is_rerunnable():
+    assert "CREATE TABLE IF NOT EXISTS" in MIGRATION_004
+    assert "CREATE INDEX IF NOT EXISTS" in MIGRATION_004
+    assert "DROP POLICY IF EXISTS" in MIGRATION_004
+    assert not re.search(r"^\s*CREATE TYPE\b", MIGRATION_004, re.MULTILINE)

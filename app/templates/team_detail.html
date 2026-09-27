@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+{% block title %}AgentOS — {{ detail.team.name }}{% endblock %}
+{% block body %}
+{% set d = detail %}
+<h1>{{ d.team.name }}</h1>
+<div class="sub"><code>{{ d.team.key }}</code> · {{ d.members|length }} agente(s) · {{ d.tasks_open }} tarefa(s) aberta(s)</div>
+
+<h2>Execução</h2>
+<div class="grid">
+  <div class="card"><div class="k">Execuções 24h / 7d</div>
+    <div class="v">{{ d.runs_24h }} <span class="dim" style="font-size:14px">/ {{ d.runs_7d }}</span></div></div>
+  <div class="card"><div class="k">Sucesso 24h</div>
+    <div class="v {% if d.success_24h is none %}dim{% elif d.success_24h < 0.8 %}warn{% endif %}">
+      {{ '%.0f%%'|format(d.success_24h * 100) if d.success_24h is not none else '—' }}</div></div>
+  <div class="card"><div class="k">Custo 24h / 7d</div>
+    <div class="v">R$ {{ '%.2f'|format(d.cost_24h)|replace('.', ',') }}
+      <span class="dim" style="font-size:14px">/ R$ {{ '%.2f'|format(d.cost_7d)|replace('.', ',') }}</span></div></div>
+  <div class="card"><div class="k">SLA estourado</div>
+    <div class="v {% if d.sla_breaches %}bad{% else %}ok{% endif %}">{{ d.sla_breaches|length }}</div></div>
+</div>
+{% if d.runs_7d == 0 %}
+<div class="note">Sem execuções registradas. O time existe como estrutura; a execução chega na onda 2. Números vazios aqui significam ausência de execução, não ausência de leitura.</div>
+{% endif %}
+
+<h2>Membros</h2>
+<div class="card" style="padding:4px 15px"><table class="cardtable">
+  <thead><tr><th>Agente</th><th>Modelo</th><th>Estado</th><th>7d</th></tr></thead>
+  <tbody>
+  {% for a in d.members %}
+  <tr>
+    <td data-label="Agente"><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a>
+      <span class="dim">{{ a.kind }}</span></td>
+    <td data-label="Modelo"><code>{{ a.backend }}</code><br><span class="dim">{{ a.model or '—' }}</span></td>
+    <td data-label="Estado">{% if a.status == 'active' %}<span class="ok">ativo</span>{% elif a.status == 'paused' %}<span class="warn">pausado</span>{% else %}<span class="dim">{{ a.status }}</span>{% endif %}</td>
+    <td data-label="7d">{{ a.runs_7d or 0 }} exec<br><span class="dim">R$ {{ '%.2f'|format(a.cost_7d or 0)|replace('.', ',') }}</span></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="dim">Sem agentes neste time.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<div class="cols" style="grid-template-columns:1fr 1fr">
+<div>
+  <h2>Backlog por estado</h2>
+  <div class="card" style="padding:4px 15px"><table>
+    <tbody>
+    {% for s, n in d.tasks_by_status.items() %}
+    <tr><td><code>{{ s }}</code></td><td style="text-align:right">{{ n }}</td></tr>
+    {% else %}
+    <tr><td class="dim">Nenhuma tarefa registrada para este time.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if d.oldest_open_at %}
+  <div class="note">Aberta mais antiga: {{ d.oldest_open_at[:16].replace('T', ' ') }}</div>
+  {% endif %}
+</div>
+<div>
+  <h2>Mix de autonomia</h2>
+  <div class="card" style="padding:4px 15px"><table>
+    <tbody>
+    {% for s, n in d.autonomy.items() %}
+    <tr><td><code>{{ s }}</code></td><td style="text-align:right">{{ n }}</td></tr>
+    {% else %}
+    <tr><td class="dim">Sem agentes.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <h2>Modelos em uso (7d)</h2>
+  <div class="card" style="padding:4px 15px"><table>
+    <tbody>
+    {% for m, info in d.models.items() %}
+    <tr><td><code>{{ m }}</code></td><td style="text-align:right">{{ info.runs }} exec · R$ {{ '%.2f'|format(info.cost)|replace('.', ',') }}</td></tr>
+    {% else %}
+    <tr><td class="dim">Nenhum modelo executou ainda. Adequação de modelo chega na onda 5.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+</div>
+
+<h2>Alertas</h2>
+<div class="card dim">Nenhum detector ativo. Detecção de degradação (8 detectores + 6 ações) chega na onda 4 — até lá, esta seção mostra que ninguém está vigiando, em vez de fingir que está tudo bem.</div>
+
+<h2>Atividade do time</h2>
+<div class="card" style="padding:6px 15px">
+  {% for e in events %}
+  <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:13px">
+    <span class="dim">{{ e.created_at[:16].replace('T', ' ') }}</span>
+    <div><code>{{ e.kind }}</code>
+      <span class="dim">{{ (e.payload or {}).get('name', '') }}</span></div>
+  </div>
+  {% else %}
+  <div class="dim" style="padding:8px 0">Nada ainda.</div>
+  {% endfor %}
+</div>
+{% endblock %}

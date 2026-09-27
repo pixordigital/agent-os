@@ -166,7 +166,14 @@ async def create_agent(org_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             f"Já existe um agente com o identificador '{data['key']}' nesta empresa."
         )
     response.raise_for_status()
-    return response.json()[0]
+    agent = response.json()[0]
+    await emit_event(
+        org_id, agent["id"], "created",
+        {"key": agent["key"], "name": agent["name"], "backend": agent.get("backend"),
+         "model": agent.get("model")},
+        team_id=agent.get("team_id"),
+    )
+    return agent
 
 
 async def update_agent(org_id: str, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -176,6 +183,7 @@ async def update_agent(org_id: str, agent_id: str, payload: dict[str, Any]) -> d
         raise AgentError(f"Campos desconhecidos: {', '.join(sorted(unknown))}.")
     if not data:
         raise AgentError("Nada para atualizar.")
+    changed = sorted(k for k in data if k != "updated_at")
     data["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
     response = await db.svc.patch(
         "/agents",
@@ -187,13 +195,19 @@ async def update_agent(org_id: str, agent_id: str, payload: dict[str, Any]) -> d
     rows = response.json()
     if not rows:
         raise AgentError("Agente não encontrado.")
-    return rows[0]
+    agent = rows[0]
+    await emit_event(
+        org_id, agent["id"], "updated", {"fields": changed},
+        team_id=agent.get("team_id"),
+    )
+    return agent
 
 
 async def set_agent_status(org_id: str, agent_id: str, status: str) -> dict[str, Any]:
     """Pause/resume/disable. Only status moves here — never runtime_state, which belongs to
     worker heartbeats (Wave 2). The UI must not be able to fake "running"."""
     _check_enum(status, STATUSES, "status")
+    before = await get_agent(org_id, agent_id)
     response = await db.svc.patch(
         "/agents",
         params={"org_id": f"eq.{org_id}", "id": f"eq.{agent_id}"},
@@ -207,7 +221,13 @@ async def set_agent_status(org_id: str, agent_id: str, status: str) -> dict[str,
     rows = response.json()
     if not rows:
         raise AgentError("Agente não encontrado.")
-    return rows[0]
+    agent = rows[0]
+    await emit_event(
+        org_id, agent["id"], "status_changed",
+        {"from": before.get("status"), "to": status},
+        team_id=agent.get("team_id"),
+    )
+    return agent
 
 
 async def agent_runs(
@@ -330,6 +350,203 @@ async def create_department(org_id: str, payload: dict[str, Any]) -> dict[str, A
         raise AgentError(f"Já existe um departamento com o identificador '{key}'.")
     response.raise_for_status()
     return response.json()[0]
+
+
+TERMINAL_TASK_STATUSES = ("completed", "failed", "expired", "cancelled")
+
+KIND_ORDER = {"orchestrator": 0, "manager": 1, "worker": 2, "reviewer": 3}
+
+
+async def emit_event(
+    org_id: str,
+    agent_id: str | None,
+    kind: str,
+    payload: dict[str, Any] | None = None,
+    team_id: str | None = None,
+) -> None:
+    """Append one row to the operational timeline. Best effort on purpose: this is the
+    operational feed, not the probative trail (that is audit_logs). An admin action that
+    succeeded must not fail because its timeline row did not."""
+    import logging
+
+    try:
+        await db.svc.post(
+            "/agent_events",
+            json={
+                "org_id": org_id,
+                "agent_id": agent_id,
+                "team_id": team_id,
+                "kind": kind,
+                "payload": payload or {},
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - timeline loss is logged, never fatal
+        logging.getLogger("agentos").warning("agent_events append failed: %s", exc)
+
+
+def build_tree(agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Nest agents into a forest by parent_agent_id. Cycle-safe: nodes unreachable from any
+    root (the signature of a cycle, or a parent deleted out of band) are surfaced as detached
+    roots instead of vanishing — a node the chart cannot show is a node nobody manages."""
+    by_id: dict[str, dict[str, Any]] = {
+        a["id"]: {**a, "children": [], "detached": False} for a in agents
+    }
+    roots: list[dict[str, Any]] = []
+    for agent in agents:
+        node = by_id[agent["id"]]
+        pid = agent.get("parent_agent_id")
+        if pid and pid in by_id and pid != agent["id"]:
+            by_id[pid]["children"].append(node)
+        else:
+            roots.append(node)
+
+    reachable: set[str] = set()
+
+    def mark(node: dict[str, Any]) -> None:
+        if node["id"] in reachable:
+            return
+        reachable.add(node["id"])
+        for child in node["children"]:
+            mark(child)
+
+    for root in roots:
+        mark(root)
+    for agent in agents:
+        if agent["id"] not in reachable:
+            node = by_id[agent["id"]]
+            node["detached"] = True
+            roots.append(node)
+
+    def sort_key(node: dict[str, Any]) -> tuple[int, str]:
+        return (KIND_ORDER.get(node.get("kind", ""), 9), node.get("name", ""))
+
+    def sort_all(node: dict[str, Any]) -> None:
+        node["children"].sort(key=sort_key)
+        for child in node["children"]:
+            sort_all(child)
+
+    roots.sort(key=sort_key)
+    for root in roots:
+        sort_all(root)
+    return roots
+
+
+async def team_detail(org_id: str, team_id: str) -> dict[str, Any]:
+    """Everything the team page needs. Aggregation in Python at Wave-1 scale; a materialised
+    view becomes justified when a team has hundreds of agents, not before."""
+    teams = await list_teams(org_id)
+    team = next((t for t in teams if t["id"] == team_id), None)
+    if team is None:
+        raise AgentError("Time não encontrado.")
+
+    members = await list_agents(org_id, team_id)
+    member_ids = {m["id"] for m in members}
+    now = dt.datetime.now(dt.timezone.utc)
+    week_ago = (now - dt.timedelta(days=7)).isoformat()
+
+    runs_resp = await db.svc.get(
+        "/agent_runs",
+        params={
+            "org_id": f"eq.{org_id}",
+            "created_at": f"gte.{week_ago}",
+            "order": "created_at.desc",
+            "limit": "2000",
+        },
+    )
+    runs_resp.raise_for_status()
+    team_runs = [r for r in runs_resp.json() if r.get("agent_id") in member_ids]
+    day_ago = (now - dt.timedelta(hours=24)).isoformat()
+    runs_24h = [r for r in team_runs if (r.get("created_at") or "") >= day_ago]
+
+    def _cost(rs: list[dict[str, Any]]) -> float:
+        return round(sum(float(r.get("cost_brl") or 0) for r in rs), 4)
+
+    def _success(rs: list[dict[str, Any]]) -> float | None:
+        return (sum(1 for r in rs if r.get("success") is True) / len(rs)) if rs else None
+
+    by_agent: dict[str, list[dict[str, Any]]] = {}
+    for run in team_runs:
+        by_agent.setdefault(run.get("agent_id") or "", []).append(run)
+    for member in members:
+        member_runs = by_agent.get(member["id"], [])
+        member["runs_7d"] = len(member_runs)
+        member["cost_7d"] = _cost(member_runs)
+        member["runs_24h"] = sum(1 for r in member_runs if (r.get("created_at") or "") >= day_ago)
+        member["cost_24h"] = _cost(
+            [r for r in member_runs if (r.get("created_at") or "") >= day_ago]
+        )
+
+    tasks_resp = await db.svc.get(
+        "/tasks",
+        params={
+            "org_id": f"eq.{org_id}",
+            "team_id": f"eq.{team_id}",
+            "order": "updated_at.desc",
+            "limit": "500",
+        },
+    )
+    tasks_resp.raise_for_status()
+    tasks = tasks_resp.json()
+    open_tasks = [t for t in tasks if t.get("status") not in TERMINAL_TASK_STATUSES]
+    by_status: dict[str, int] = {}
+    for task in tasks:
+        by_status[task.get("status", "?")] = by_status.get(task.get("status", "?"), 0) + 1
+    sla_breaches = [
+        t for t in open_tasks
+        if t.get("sla_deadline") and t["sla_deadline"] < now.isoformat()
+    ]
+    oldest_open = min(
+        (t.get("created_at") or "" for t in open_tasks), default=None
+    )
+
+    models: dict[str, dict[str, Any]] = {}
+    for run in team_runs:
+        entry = models.setdefault(
+            run.get("model") or "?", {"runs": 0, "cost": 0.0}
+        )
+        entry["runs"] += 1
+        entry["cost"] = round(entry["cost"] + float(run.get("cost_brl") or 0), 4)
+
+    autonomy: dict[str, int] = {}
+    for member in members:
+        autonomy[member["status"]] = autonomy.get(member["status"], 0) + 1
+
+    return {
+        "team": team,
+        "members": members,
+        "runs_24h": len(runs_24h),
+        "runs_7d": len(team_runs),
+        "success_24h": _success(runs_24h),
+        "cost_24h": _cost(runs_24h),
+        "cost_7d": _cost(team_runs),
+        "tasks_total": len(tasks),
+        "tasks_open": len(open_tasks),
+        "tasks_by_status": by_status,
+        "sla_breaches": sla_breaches,
+        "oldest_open_at": oldest_open,
+        "models": models,
+        "autonomy": autonomy,
+        # No detectors yet: degradation detection is Wave 4. An empty list here means
+        # "not watched", and the template says exactly that instead of showing zero.
+        "alerts": [],
+    }
+
+
+async def recent_events(
+    org_id: str, agent_id: str | None = None, team_id: str | None = None, limit: int = 30
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {
+        "org_id": f"eq.{org_id}",
+        "order": "created_at.desc",
+        "limit": str(min(max(limit, 1), 100)),
+    }
+    if agent_id:
+        params["agent_id"] = f"eq.{agent_id}"
+    if team_id:
+        params["team_id"] = f"eq.{team_id}"
+    response = await db.svc.get("/agent_events", params=params)
+    response.raise_for_status()
+    return response.json()
 
 
 async def dashboard_summary(org_id: str) -> dict[str, Any]:

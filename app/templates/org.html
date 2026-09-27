@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block title %}AgentOS — Organograma{% endblock %}
+{% block body %}
+<h1>Organograma</h1>
+<div class="sub">{{ agent_count }} agente(s) · atualiza a cada 10s · push em tempo real chega com o Realtime na onda 2</div>
+
+<style>
+  .orgroot { margin-bottom: 18px; }
+  .orgnode { border: 1px solid var(--line-soft); border-radius: var(--radius);
+             background: var(--ink-raised); padding: 12px 14px; }
+  .orgnode + .orgnode { margin-top: 10px; }
+  .orgnode .plain { display: flex; align-items: center; gap: 9px; font-size: 15px; }
+  .orgkids { margin: 10px 0 2px 14px; padding-left: 14px; border-left: 2px solid var(--line); }
+  .orgkids .orgnode { margin-bottom: 8px; }
+  .orgnode.kind-orchestrator { border-left: 3px solid var(--brass); }
+  .orgnode.kind-manager { border-left: 3px solid var(--ok); }
+  .orgnode.detached { border-style: dashed; }
+  .orgnode .dot { width: 10px; height: 10px; }
+  .ev { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
+  .ev:last-child { border-bottom: none; }
+  .ev time { color: var(--bone-faint); white-space: nowrap; }
+</style>
+
+<div id="orgtree" hx-get="/org/tree" hx-trigger="every 10s">
+  {% include "org_tree.html" %}
+</div>
+
+<h2>Atividade recente</h2>
+<div class="card" style="padding:6px 15px">
+  {% for e in events %}
+  <div class="ev">
+    <time>{{ e.created_at[:16].replace('T', ' ') }}</time>
+    <div><code>{{ e.kind }}</code>
+      <span class="dim">{{ (e.payload or {}).get('name', '') }}{{ (e.payload or {}).get('key', '') and ' · ' + (e.payload or {}).get('key', '') }}</span>
+    </div>
+  </div>
+  {% else %}
+  <div class="dim" style="padding:8px 0">Nada ainda. Criar, editar, pausar ou ativar um agente escreve aqui.</div>
+  {% endfor %}
+</div>
+<div class="note">Estado observado (<code>runtime_state</code>, heartbeat, tarefa atual) só muda por worker — onda 2. Até lá, cada nó mostra configuração + o que já foi registrado, nunca execução fingida.</div>
+{% endblock %}

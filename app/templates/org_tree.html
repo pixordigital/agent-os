@@ -1,0 +1,37 @@
+{# Recursive org-chart renderer. Depth is capped at 5: build_tree() is cycle-safe and
+   surfaces loops as detached roots, but the template must still terminate if the data ever
+   surprises it — a chart that recurses forever is a hung page, not a chart. #}
+{% macro node(a, depth) %}
+<div class="orgnode kind-{{ a.kind }}{% if a.detached %} detached{% endif %}">
+  <a class="plain" href="/agents/{{ a.id }}">
+    <span class="dot
+      {% if a.status == 'disabled' %}bad{% elif a.status == 'paused' %}warn
+      {% elif a.runtime_state == 'busy' %}run{% elif a.status == 'active' %}ok{% endif %}"></span>
+    <strong>{{ a.name }}</strong>
+  </a>
+  <div class="dim" style="font-size:12px;margin-top:2px">
+    {{ a.kind }}{% if a.team_name %} · {{ a.team_name }}{% endif %}
+    {% if a.detached %} · <span class="warn">fora da árvore (ciclo ou pai ausente)</span>{% endif %}
+  </div>
+  <div class="dim" style="font-size:12px">
+    <code>{{ a.backend }}</code> {{ (a.model or '')[:42] }}
+  </div>
+  <div class="dim" style="font-size:12px">
+    {{ a.runtime_state }}{% if a.current_task_id %} · em tarefa{% endif %}
+    · {{ a.runs_24h or 0 }} exec 24h
+    · R$ {{ '%.2f'|format(a.cost_24h or 0)|replace('.', ',') }}
+  </div>
+  {% if a.children and depth < 5 %}
+  <div class="orgkids">
+    {% for c in a.children %}{{ node(c, depth + 1) }}{% endfor %}
+  </div>
+  {% elif a.children %}
+  <div class="dim" style="font-size:12px">…({{ a.children|length }} abaixo do limite de exibição)</div>
+  {% endif %}
+</div>
+{% endmacro %}
+{% for root in tree %}
+<div class="orgroot">{{ node(root, 0) }}</div>
+{% else %}
+<div class="card dim">Nenhum agente ainda. <a href="/agents#criar">Criar o primeiro</a> — ele vira a raiz da árvore.</div>
+{% endfor %}

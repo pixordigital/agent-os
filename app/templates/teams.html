@@ -7,7 +7,7 @@
 <div class="cols">
 <div>
   {% for t in teams %}
-  <h2>{{ t.name }} <span class="dim" style="font-weight:400"><code>{{ t.key }}</code></span></h2>
+  <h2><a class="plain" href="/teams/{{ t.id }}" style="display:inline">{{ t.name }}</a> <span class="dim" style="font-weight:400"><code>{{ t.key }}</code></span></h2>
   <div class="card" style="padding:4px 15px"><table class="cardtable">
     <thead><tr><th>Agente</th><th>Backend / modelo</th><th>Estado</th><th>24h</th></tr></thead>
     <tbody>
