@@ -306,3 +306,20 @@ def test_002_is_rerunnable():
     assert "CREATE INDEX IF NOT EXISTS" in MIGRATION_002
     assert "DROP POLICY IF EXISTS" in MIGRATION_002
     assert not re.search(r"^\s*CREATE TYPE\b", MIGRATION_002, re.MULTILINE)
+
+
+# ---------------------------------------------------------------------------
+# 003_agent_temperature.sql — temperature rides with the model binding.
+# ---------------------------------------------------------------------------
+
+MIGRATION_003 = (
+    pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "003_agent_temperature.sql"
+).read_text(encoding="utf-8")
+
+
+def test_003_adds_temperature_with_range():
+    """0..2 matches the OpenAI/Anthropic contract; the app validates the same range so the
+    error message arrives in PT-BR before the database CHECK fires in English."""
+    assert "ADD COLUMN IF NOT EXISTS temperature" in MIGRATION_003
+    assert "CHECK (temperature >= 0 AND temperature <= 2)" in MIGRATION_003
+    assert "DEFAULT 0.7" in MIGRATION_003

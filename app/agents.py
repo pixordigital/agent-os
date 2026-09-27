@@ -33,7 +33,7 @@ STATUSES = ("draft", "active", "paused", "disabled")
 UPDATABLE_AGENT_FIELDS = {
     "name", "team_id", "department_id", "parent_agent_id", "kind", "backend",
     "model", "fallback_model", "system_prompt", "tools", "status",
-    "budget_brl_day", "max_tokens_per_task", "max_tool_calls",
+    "budget_brl_day", "max_tokens_per_task", "max_tool_calls", "temperature",
 }
 
 
@@ -99,6 +99,13 @@ def _check_agent_payload(payload: dict[str, Any], *, partial: bool) -> dict[str,
                 raise AgentError(f"{num} precisa ser um número.") from None
             if out[num] <= 0:
                 raise AgentError(f"{num} precisa ser maior que zero.")
+    if "temperature" in payload and payload["temperature"] not in (None, ""):
+        try:
+            out["temperature"] = float(payload["temperature"])
+        except (TypeError, ValueError):
+            raise AgentError("Temperatura precisa ser um número entre 0 e 2.") from None
+        if not 0 <= out["temperature"] <= 2:
+            raise AgentError("Temperatura precisa estar entre 0 (determinístico) e 2.")
     return out
 
 

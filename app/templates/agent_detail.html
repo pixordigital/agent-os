@@ -55,35 +55,12 @@
 
 <div>
   <h2>Editar</h2>
-  <div class="card">
-    {% if error %}<div class="err">{{ error }}</div>{% endif %}
-    <form class="block" method="post" action="/agents/{{ agent.id }}">
-      <label for="e-name">Nome</label>
-      <input type="text" id="e-name" name="name" required value="{{ form.name or agent.name }}">
-      <label for="e-team">Time</label>
-      <select id="e-team" name="team_id">
-        <option value="">— sem time (nível da empresa) —</option>
-        {% for t in teams %}
-        <option value="{{ t.id }}" {% if (form.team_id or agent.team_id) == t.id %}selected{% endif %}>{{ t.name }}</option>
-        {% endfor %}
-      </select>
-      <label for="e-backend">Backend de execução</label>
-      <select id="e-backend" name="backend">
-        {% for b in backends %}
-        <option value="{{ b }}" {% if (form.backend or agent.backend) == b %}selected{% endif %}>{{ b }}</option>
-        {% endfor %}
-      </select>
-      <label for="e-model">Modelo</label>
-      <input type="text" id="e-model" name="model" required value="{{ form.model or agent.model }}">
-      <label for="e-fallback">Modelo reserva</label>
-      <input type="text" id="e-fallback" name="fallback_model" value="{{ form.fallback_model if form.fallback_model is defined else agent.fallback_model }}">
-      <label for="e-budget">Teto diário em R$</label>
-      <input type="text" id="e-budget" name="budget_brl_day" value="{{ form.budget_brl_day if form.budget_brl_day is defined else (agent.budget_brl_day or '') }}">
-      <label for="e-prompt">System prompt</label>
-      <textarea id="e-prompt" name="system_prompt">{{ form.system_prompt if form.system_prompt is defined else agent.system_prompt }}</textarea>
-      <div class="btnrow"><button class="btn primary" type="submit">Salvar</button></div>
-    </form>
-  </div>
+  <form class="block" method="post" action="/agents/{{ agent.id }}">
+    {% set show_key = False %}
+    {% set active_now = False %}
+    {% set submit_label = "Salvar alterações" %}
+    {% include "agent_form.html" %}
+  </form>
   <h2>Estado</h2>
   <div class="card">
     <div class="row">

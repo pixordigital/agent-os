@@ -199,17 +199,27 @@ async def agents_create(
     backend: str = Form(default="native"),
     model: str = Form(default=""),
     fallback_model: str = Form(default=""),
+    temperature: str = Form(default="0.7"),
+    max_tokens: str = Form(default=""),
+    max_tool_calls: str = Form(default=""),
     budget_brl_day: str = Form(default=""),
     system_prompt: str = Form(default=""),
+    tools: str = Form(default=""),
+    active_now: str = Form(default=""),
 ) -> Response:
     org_id = await _org_id()
     form = {
         "name": name, "key": key, "team_id": team_id, "kind": kind,
         "backend": backend, "model": model, "fallback_model": fallback_model,
-        "budget_brl_day": budget_brl_day, "system_prompt": system_prompt,
+        "temperature": temperature, "max_tokens_per_task": max_tokens,
+        "max_tool_calls": max_tool_calls, "budget_brl_day": budget_brl_day,
+        "system_prompt": system_prompt,
+        "tools": [t.strip() for t in tools.split(",") if t.strip()],
     }
     try:
-        agent = await agents_svc.create_agent(org_id, {**form, "status": "draft"})
+        agent = await agents_svc.create_agent(
+            org_id, {**form, "status": "active" if active_now else "draft"}
+        )
     except AgentError as exc:
         teams = await agents_svc.list_teams(org_id)
         agents = await agents_svc.list_agents(org_id)
@@ -234,10 +244,11 @@ async def agent_detail_page(
     stats = await agents_svc.agent_stats(org_id, agent_id)
     runs = await agents_svc.agent_runs(org_id, agent_id)
     tasks = await agents_svc.agent_tasks(org_id, agent_id)
+    all_agents = await agents_svc.list_agents(org_id)
     return _template(
         "agent_detail.html", request, tab="agents", agent=agent, teams=teams,
-        stats=stats, runs=runs, tasks=tasks,
-        backends=agents_svc.BACKENDS, error=error, form={},
+        agents=all_agents, stats=stats, runs=runs, tasks=tasks,
+        backends=agents_svc.BACKENDS, kinds=agents_svc.KINDS, error=error, form={},
     )
 
 
@@ -247,18 +258,31 @@ async def agent_edit(
     agent_id: str,
     name: str = Form(default=""),
     team_id: str = Form(default=""),
+    kind: str = Form(default=""),
+    parent_agent_id: str = Form(default=""),
+    status: str = Form(default=""),
     backend: str = Form(default="native"),
     model: str = Form(default=""),
     fallback_model: str = Form(default=""),
+    temperature: str = Form(default=""),
+    max_tokens: str = Form(default=""),
+    max_tool_calls: str = Form(default=""),
     budget_brl_day: str = Form(default=""),
     system_prompt: str = Form(default=""),
+    tools: str = Form(default=""),
 ) -> Response:
     org_id = await _org_id()
     form = {
-        "name": name, "team_id": team_id, "backend": backend, "model": model,
-        "fallback_model": fallback_model, "budget_brl_day": budget_brl_day,
-        "system_prompt": system_prompt,
+        "name": name, "team_id": team_id, "kind": kind or None,
+        "parent_agent_id": parent_agent_id or None,
+        "status": status or None,
+        "backend": backend, "model": model,
+        "fallback_model": fallback_model, "temperature": temperature,
+        "max_tokens_per_task": max_tokens, "max_tool_calls": max_tool_calls,
+        "budget_brl_day": budget_brl_day, "system_prompt": system_prompt,
+        "tools": [t.strip() for t in tools.split(",") if t.strip()],
     }
+    form = {k: v for k, v in form.items() if v is not None}
     try:
         await agents_svc.update_agent(org_id, agent_id, form)
     except AgentError as exc:
@@ -270,10 +294,11 @@ async def agent_edit(
         stats = await agents_svc.agent_stats(org_id, agent_id)
         runs = await agents_svc.agent_runs(org_id, agent_id)
         tasks = await agents_svc.agent_tasks(org_id, agent_id)
+        all_agents = await agents_svc.list_agents(org_id)
         return _template(
             "agent_detail.html", request, tab="agents", agent=agent, teams=teams,
-            stats=stats, runs=runs, tasks=tasks,
-            backends=agents_svc.BACKENDS, error=str(exc), form=form,
+            agents=all_agents, stats=stats, runs=runs, tasks=tasks,
+            backends=agents_svc.BACKENDS, kinds=agents_svc.KINDS, error=str(exc), form=form,
         )
     return RedirectResponse(f"/agents/{agent_id}", status_code=303)
 
