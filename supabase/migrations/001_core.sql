@@ -384,10 +384,13 @@ CREATE OR REPLACE FUNCTION app_private.row_visible(p_org_id uuid, p_team_id uuid
 --   2. service_role must hold CREATE on the schema, because the new owner needs it.
 -- Guarded because plain Postgres (local dev) has no service_role, and there the cycle does not
 -- arise for lack of FORCE.
-GRANT CREATE ON SCHEMA app_private TO service_role;
+-- Guarded because plain Postgres has no service_role: the GRANT below must not run
+-- where the role does not exist, or first boot against a non-Supabase database dies here.
+-- Where service_role exists (Supabase) behaviour is unchanged.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    EXECUTE 'GRANT CREATE ON SCHEMA app_private TO service_role';
     EXECUTE 'ALTER FUNCTION app_private.is_ceo() OWNER TO service_role';
   END IF;
 END;
