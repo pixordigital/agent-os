@@ -16,14 +16,18 @@
   <td data-label="24h">{{ a.runs_24h or 0 }} exec<br><span class="dim">R$ {{ '%.2f'|format(a.cost_24h or 0)|replace('.', ',') }}</span></td>
   <td data-label="" class="no-label actions">
     {% if a.status == 'active' %}
-    <form method="post" action="/agents/{{ a.id }}/pause" style="margin:0">
+    <form method="post" action="/agents/{{ a.id }}/pause" style="margin:0 0 8px">
       <button class="btn" type="submit">Pausar</button>
     </form>
     {% elif a.status in ('paused', 'draft') %}
-    <form method="post" action="/agents/{{ a.id }}/resume" style="margin:0">
+    <form method="post" action="/agents/{{ a.id }}/resume" style="margin:0 0 8px">
       <button class="btn" type="submit">Ativar</button>
     </form>
     {% endif %}
+    <form method="post" action="/agents/{{ a.id }}/delete" style="margin:0"
+          onsubmit="return confirm('Excluir {{ a.name }}? O histórico de custo permanece, o resto não volta.')">
+      <button class="btn danger" type="submit">Excluir</button>
+    </form>
   </td>
 </tr>
 {% else %}

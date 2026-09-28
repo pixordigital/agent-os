@@ -230,6 +230,23 @@ async def set_agent_status(org_id: str, agent_id: str, status: str) -> dict[str,
     return agent
 
 
+async def delete_agent(org_id: str, agent_id: str) -> dict[str, Any]:
+    """Delete an agent. Children detach (parent FK is SET NULL), run history stays —
+    cost truth must survive the agent. The timeline row carries agent_id None because
+    the agent's own events cascade away with it."""
+    agent = await get_agent(org_id, agent_id)
+    response = await db.svc.delete(
+        "/agents", params={"org_id": f"eq.{org_id}", "id": f"eq.{agent_id}"}
+    )
+    response.raise_for_status()
+    await emit_event(
+        org_id, None, "deleted",
+        {"key": agent["key"], "name": agent["name"]},
+        team_id=agent.get("team_id"),
+    )
+    return agent
+
+
 async def agent_runs(
     org_id: str, agent_id: str, limit: int = 50
 ) -> list[dict[str, Any]]:

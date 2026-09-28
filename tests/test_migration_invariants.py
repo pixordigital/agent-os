@@ -422,3 +422,27 @@ MIGRATION_006 = (
 def test_006_adds_measured_cost_columns():
     assert "ADD COLUMN IF NOT EXISTS cost_usd" in MIGRATION_006
     assert "ADD COLUMN IF NOT EXISTS provider_request_id" in MIGRATION_006
+
+
+# ---------------------------------------------------------------------------
+# 007_deleted_event.sql — deletion emits one org-scoped timeline row. The 004 CHECK
+# is closed by design, so the new kind arrives by replacing the constraint, not by
+# loosening the column.
+# ---------------------------------------------------------------------------
+
+MIGRATION_007 = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "supabase"
+    / "migrations"
+    / "007_deleted_event.sql"
+).read_text(encoding="utf-8")
+
+
+def test_007_allows_deleted_kind():
+    assert "'deleted'" in MIGRATION_007
+    for kind in ("created", "status_changed", "heartbeat", "hitl_pending"):
+        assert f"'{kind}'" in MIGRATION_007, kind
+
+
+def test_007_is_rerunnable():
+    assert "DROP CONSTRAINT IF EXISTS agent_events_kind_check" in MIGRATION_007

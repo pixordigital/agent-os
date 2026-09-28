@@ -355,6 +355,19 @@ async def agent_resume(request: Request, agent_id: str) -> Response:
     return RedirectResponse(target, status_code=303)
 
 
+@app.post("/agents/{agent_id}/delete", response_class=Response)
+async def agent_delete(request: Request, agent_id: str) -> Response:
+    """Delete is POST-with-redirect like pause/resume, never GET: a crawler or a
+    prefetched link must not be able to destroy an agent. The detail page 404s
+    afterwards, so the landing is always /agents."""
+    org_id = await _org_id()
+    try:
+        await agents_svc.delete_agent(org_id, agent_id)
+    except AgentError:
+        pass
+    return RedirectResponse("/agents", status_code=303)
+
+
 @app.get("/teams", response_class=Response)
 async def teams_page(
     request: Request, team_error: str = "", dept_error: str = ""
@@ -469,6 +482,16 @@ async def api_agent_update(agent_id: str, payload: dict[str, Any]) -> JSONRespon
         agent = await agents_svc.update_agent(org_id, agent_id, payload)
     except AgentError as exc:
         return _json_error(str(exc))
+    return JSONResponse({"ok": True, "agent": agent})
+
+
+@app.delete("/api/agents/{agent_id}")
+async def api_agent_delete(agent_id: str) -> JSONResponse:
+    org_id = await _org_id()
+    try:
+        agent = await agents_svc.delete_agent(org_id, agent_id)
+    except AgentError as exc:
+        return _json_error(str(exc), 404)
     return JSONResponse({"ok": True, "agent": agent})
 
 
