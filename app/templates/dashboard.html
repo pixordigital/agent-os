@@ -1,8 +1,11 @@
 {% extends "layout.html" %}
 {% block title %}AgentOS — Início{% endblock %}
 {% block body %}
-<h1>Início</h1>
-<div class="sub">Sua frota de agentes, num relance · <code>:{{ port }}</code></div>
+<header class="hero">
+  <p class="eyebrow">Console do operador · :{{ port }}</p>
+  <h1>Sua frota, num relance.</h1>
+  <div class="sub">Cada agente, cada time, cada real — medido, não prometido.</div>
+</header>
 
 <h2>Frota <span class="dim" style="font-weight:400">· <a href="/org">organograma</a></span></h2>
 <div class="fleet" id="fleet">
