@@ -27,6 +27,19 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
+
+async def _init_connection(conn: Any) -> None:
+    """Per-connection setup: decode jsonb as dicts. asyncpg returns jsonb as raw text by
+    default, which turns every `row["payload"]["text"]` into a TypeError at runtime — found
+    live when the worker read its first task. One place, every pool, no per-query parsing."""
+    import json
+
+    await conn.set_type_codec(
+        "jsonb", encoder=json.dumps, decoder=json.loads,
+        schema="pg_catalog", format="text",
+    )
+
+
 MIGRATIONS_TABLE = """
 CREATE SCHEMA IF NOT EXISTS app_meta;
 CREATE TABLE IF NOT EXISTS app_meta.schema_migrations (
@@ -82,6 +95,7 @@ class Database:
             settings.database_url,
             min_size=1,
             max_size=5,  # ponytail: one api container, low concurrency. Raise with replicas.
+            init=_init_connection,
         )
         # Both headers, on purpose. `apikey` is the Kong-layer convention; `Authorization:
         # Bearer` is what PostgREST itself requires to actually switch to the JWT role — verified

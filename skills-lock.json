@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "detecting-ai-model-prompt-injection-attacks": {
+      "source": "mukul975/anthropic-cybersecurity-skills",
+      "sourceType": "github",
+      "skillPath": "skills/detecting-ai-model-prompt-injection-attacks/SKILL.md",
+      "computedHash": "b618b7c72f88b89572948604d45fd0a5a72aa1aa005d3361ca05e3ec0da8b9c6"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "computedHash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf"
+    },
+    "llm-risk-assess": {
+      "source": "owasp/secure-agent-playbook",
+      "sourceType": "github",
+      "skillPath": "plugins/ai-security-skills/skills/llm-risk-assess/SKILL.md",
+      "computedHash": "f41ebd06071715628b5cc0a4aef8d8ea39962655e4b0b49c89a3b4883437a15a"
+    },
+    "prompt-injection-test": {
+      "source": "owasp/secure-agent-playbook",
+      "sourceType": "github",
+      "skillPath": "plugins/ai-security-skills/skills/prompt-injection-test/SKILL.md",
+      "computedHash": "8e0d68a0c2fe667a9e593d4564e0979922e74961a7f06c98b31231aa45f88404"
+    },
+    "slack-bot": {
+      "source": "openclaudia/openclaudia-skills",
+      "sourceType": "github",
+      "skillPath": "skills/slack-bot/SKILL.md",
+      "computedHash": "5a97976c613d7eba3a743d0ebb4ede1b633a291abce1f2d224caa93e2aac12aa"
+    },
+    "supabase": {
+      "source": "supabase-community/supabase-plugin",
+      "sourceType": "github",
+      "skillPath": "skills/supabase/SKILL.md",
+      "computedHash": "583344c20e90f3654dbb0632f088d89fd9f1dde8ac85e8a644dd12eee59b1380"
+    }
+  }
+}

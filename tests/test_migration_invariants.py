@@ -369,3 +369,56 @@ def test_004_is_rerunnable():
     assert "CREATE INDEX IF NOT EXISTS" in MIGRATION_004
     assert "DROP POLICY IF EXISTS" in MIGRATION_004
     assert not re.search(r"^\s*CREATE TYPE\b", MIGRATION_004, re.MULTILINE)
+
+
+# ---------------------------------------------------------------------------
+# 005_pending_approvals.sql — exactly one OPEN approval per task. A second human
+# decision on the same task waits for the first to resolve; concurrent approvals are how
+# someone says yes to a question that was already superseded.
+# ---------------------------------------------------------------------------
+
+MIGRATION_005 = (
+    pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "005_pending_approvals.sql"
+).read_text(encoding="utf-8")
+
+
+def test_005_single_open_approval_per_task():
+    assert "CREATE TABLE IF NOT EXISTS public.pending_approvals" in MIGRATION_005
+    assert "WHERE status = 'pending'" in MIGRATION_005
+
+
+def test_005_only_people_resolve():
+    """Approval authority must never be confusable between human and model: the resolver
+    column points at people, and there is deliberately no agent resolver column."""
+    assert "resolved_by_person_id" in MIGRATION_005
+    assert "resolved_by_agent_id" not in MIGRATION_005
+
+
+def test_005_rls_forced_and_anon_denied():
+    assert "ALTER TABLE public.pending_approvals ENABLE ROW LEVEL SECURITY" in MIGRATION_005
+    assert "ALTER TABLE public.pending_approvals FORCE ROW LEVEL SECURITY" in MIGRATION_005
+    assert "app_private.row_visible(org_id, team_id)" in MIGRATION_005
+    assert "REVOKE ALL ON public.pending_approvals FROM anon" in MIGRATION_005
+    assert "GRANT ALL ON public.pending_approvals TO service_role" in MIGRATION_005
+
+
+def test_005_is_rerunnable():
+    assert "CREATE TABLE IF NOT EXISTS" in MIGRATION_005
+    assert "CREATE INDEX IF NOT EXISTS" in MIGRATION_005
+    assert "DROP POLICY IF EXISTS" in MIGRATION_005
+    assert not re.search(r"^\s*CREATE TYPE\b", MIGRATION_005, re.MULTILINE)
+
+
+# ---------------------------------------------------------------------------
+# 006_run_cost.sql — measured provider cost. Tokens × a price table rots; the provider's
+# own usage.cost does not. cost_usd NULL means "not reported", never "estimated".
+# ---------------------------------------------------------------------------
+
+MIGRATION_006 = (
+    pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "006_run_cost.sql"
+).read_text(encoding="utf-8")
+
+
+def test_006_adds_measured_cost_columns():
+    assert "ADD COLUMN IF NOT EXISTS cost_usd" in MIGRATION_006
+    assert "ADD COLUMN IF NOT EXISTS provider_request_id" in MIGRATION_006

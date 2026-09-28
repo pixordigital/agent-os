@@ -15,6 +15,10 @@ dependencies = [
   "pydantic>=2.9",
   "pydantic-settings>=2.6",
   "arq>=0.26",
+  # Socket Mode listener only (inbound events without public TLS ingress). Outbound posts use
+  # plain httpx in app/channels/slack_api.py — the three endpoints we need do not justify an
+  # SDK, and the skill documents their exact HTTP shapes.
+  "slack-sdk>=3.35",
 ]
 
 [project.optional-dependencies]
