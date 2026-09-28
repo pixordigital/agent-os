@@ -2,26 +2,30 @@
 {% block title %}AgentOS — Início{% endblock %}
 {% block body %}
 <header class="hero">
-  <p class="eyebrow">Console do operador · :{{ port }}</p>
-  <h1>Sua frota, num relance.</h1>
-  <div class="sub">Cada agente, cada time, cada real — medido, não prometido.</div>
+  <div class="hero-glow" aria-hidden="true"></div>
+  <p class="eyebrow reveal">Console do operador · :{{ port }}</p>
+  <h1 class="reveal" style="--i:1">Sua frota, <em>num relance.</em></h1>
+  <div class="sub reveal" style="--i:2">Cada agente, cada time, cada real — medido, não prometido.</div>
+  <div class="reveal" style="--i:3; margin-top:14px">
+    <span class="pill" id="livepill"><span class="dot" id="pilldot"></span><span id="pilltext">a sondar…</span></span>
+  </div>
 </header>
 
-<h2>Frota <span class="dim" style="font-weight:400">· <a href="/org">organograma</a></span></h2>
-<div class="fleet" id="fleet">
+<div class="sec reveal">Frota <span class="dim" style="font-weight:400">· <a href="/org">organograma</a></span></div>
+<div class="fleet reveal" style="--i:1" id="fleet">
   <span class="dim">…</span>
 </div>
 
-<h2>Saúde</h2>
-<div class="grid" id="health">
+<div class="sec reveal">Saúde</div>
+<div class="grid reveal" style="--i:1" id="health">
   <div class="card"><div class="k">Estado</div><div class="v dim">…</div></div>
   <div class="card"><div class="k">Ambiente</div><div class="v dim">…</div></div>
   <div class="card"><div class="k">Tabelas com RLS</div><div class="v dim">…</div></div>
   <div class="card"><div class="k">Migrations pendentes</div><div class="v dim">…</div></div>
 </div>
 
-<h2> Agentes <span class="dim" style="font-weight:400">· <a href="/agents">gerenciar</a></span></h2>
-<div class="grid" id="agentsum">
+<div class="sec reveal">Agentes <span class="dim" style="font-weight:400">· <a href="/agents">gerenciar</a></span></div>
+<div class="grid reveal" style="--i:1" id="agentsum">
   <div class="card"><div class="k">Total</div><div class="v dim">…</div></div>
   <div class="card"><div class="k">Ativos</div><div class="v dim">…</div></div>
   <div class="card"><div class="k">Execuções (24h)</div><div class="v dim">…</div></div>
@@ -29,8 +33,8 @@
 </div>
 <div class="note" id="workersnote" style="display:none"></div>
 
-<h2>Times <span class="dim" style="font-weight:400">· <a href="/teams">gerenciar</a></span></h2>
-<div class="card" style="padding:4px 15px"><table class="cardtable" id="teamtable">
+<div class="sec reveal">Times <span class="dim" style="font-weight:400">· <a href="/teams">gerenciar</a></span></div>
+<div class="card reveal" style="--i:1; padding:4px 15px"><table class="cardtable" id="teamtable">
   <thead><tr><th>Time</th><th>Agentes</th><th>Execuções 24h</th><th>Custo 24h</th></tr></thead>
   <tbody><tr><td colspan="4" class="dim">…</td></tr></tbody>
 </table></div>
@@ -47,6 +51,14 @@
     if (a.status === 'active') return 'ok';
     return '';
   };
+  // Swap .v text; flash when the value actually moved so live updates read as motion.
+  const setV = (el, html) => {
+    if (!el || el.innerHTML === html) return;
+    el.innerHTML = html;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  };
   async function tick() {
     let d;
     try { d = await (await fetch('/api/status')).json(); }
@@ -54,6 +66,9 @@
     const h = d.health, ok = h.ready;
     const live = document.getElementById('livedot');
     if (live) live.className = 'livedot ' + (ok ? 'ok' : 'bad');
+    const pill = document.getElementById('pilltext'), pdot = document.getElementById('pilldot');
+    if (pill) pill.textContent = ok ? 'operacional' : 'degradado';
+    if (pdot) pdot.className = 'dot ' + (ok ? 'ok' : 'bad');
 
     document.getElementById('fleet').innerHTML = (d.summary.agents.map(a => `
       <a class="chip" href="/agents/${a.id}">
@@ -62,23 +77,22 @@
       </a>`).join('') ||
       `<span class="dim">Nenhum agente. <a href="/agents#criar">Criar o primeiro</a>.</span>`);
 
-    document.getElementById('health').innerHTML = `
-      <div class="card"><div class="k">Estado</div>
-        <div class="v ${ok ? 'ok' : 'bad'}">${ok ? 'pronto' : 'degradado'}</div>
-        <div class="sub" style="margin-top:6px">${h.detail || ''}</div></div>
-      <div class="card"><div class="k">Ambiente</div><div class="v">${d.env}</div></div>
-      <div class="card"><div class="k">Tabelas com RLS</div>
-        <div class="v ${h.rls_enabled_on.length ? 'ok' : 'bad'}">${h.rls_enabled_on.length}</div></div>
-      <div class="card"><div class="k">Migrations pendentes</div>
-        <div class="v ${h.migrations_pending.length ? 'bad' : 'ok'}">${h.migrations_pending.length}</div></div>`;
+    const healthCards = document.getElementById('health').children;
+    setV(healthCards[0].querySelector('.v'),
+      `<span class="${ok ? 'ok' : 'bad'}">${ok ? 'pronto' : 'degradado'}</span>` +
+      (h.detail ? `<small>${h.detail}</small>` : ''));
+    setV(healthCards[1].querySelector('.v'), `${d.env}`);
+    setV(healthCards[2].querySelector('.v'),
+      `<span class="${h.rls_enabled_on.length ? 'ok' : 'bad'}">${h.rls_enabled_on.length}</span>`);
+    setV(healthCards[3].querySelector('.v'),
+      `<span class="${h.migrations_pending.length ? 'bad' : 'ok'}">${h.migrations_pending.length}</span>`);
 
-    const s = d.summary;
-    document.getElementById('agentsum').innerHTML = `
-      <div class="card"><div class="k">Total</div><div class="v">${s.agent_count}</div></div>
-      <div class="card"><div class="k">Ativos</div>
-        <div class="v ${(s.by_status.active || 0) ? '' : 'dim'}">${s.by_status.active || 0}</div></div>
-      <div class="card"><div class="k">Execuções (24h)</div><div class="v">${s.runs_24h}</div></div>
-      <div class="card"><div class="k">Custo (24h)</div><div class="v">${money(s.cost_24h)}</div></div>`;
+    const s = d.summary, sumCards = document.getElementById('agentsum').children;
+    setV(sumCards[0].querySelector('.v'), `${s.agent_count}`);
+    setV(sumCards[1].querySelector('.v'),
+      `<span class="${(s.by_status.active || 0) ? '' : 'dim'}">${s.by_status.active || 0}</span>`);
+    setV(sumCards[2].querySelector('.v'), `${s.runs_24h}`);
+    setV(sumCards[3].querySelector('.v'), `${money(s.cost_24h)}`);
 
     const note = document.getElementById('workersnote');
     if (s.runs_24h === 0) {
