@@ -32,6 +32,7 @@ from app import agents as agents_svc
 from app.agents import AgentError
 from app.config import get_settings
 from app.db import db
+from app.prompt_templates import get_template, list_templates
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -469,3 +470,17 @@ async def api_agent_update(agent_id: str, payload: dict[str, Any]) -> JSONRespon
     except AgentError as exc:
         return _json_error(str(exc))
     return JSONResponse({"ok": True, "agent": agent})
+
+
+@app.get("/api/prompt-templates")
+async def api_prompt_templates() -> JSONResponse:
+    """Template gallery metadata (no content — the form fetches one at a time)."""
+    return JSONResponse({"ok": True, **list_templates()})
+
+
+@app.get("/api/prompt-templates/{key}")
+async def api_prompt_template(key: str) -> JSONResponse:
+    template = get_template(key)
+    if template is None:
+        return _json_error("Modelo de prompt não encontrado.", 404)
+    return JSONResponse({"ok": True, "template": template})

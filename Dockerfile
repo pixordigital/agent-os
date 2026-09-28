@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.32" "jinja
 
 COPY app ./app
 COPY supabase/migrations ./supabase/migrations
+COPY supabase/seeds ./supabase/seeds
 COPY docs ./docs
 
 # Never run as root: an agent that can write to the filesystem should not be able to write to
