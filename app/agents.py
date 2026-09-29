@@ -247,6 +247,42 @@ async def delete_agent(org_id: str, agent_id: str) -> dict[str, Any]:
     return agent
 
 
+async def create_task(
+    org_id: str,
+    *,
+    team_id: str | None,
+    agent_id: str | None,
+    type: str = "generic",
+    risk: str = "baixo",
+    payload: dict[str, Any] | None = None,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Write one intake task as queued. A repeated webhook replays the same
+    idempotency_key: PostgREST answers 409 and the existing row comes back, so a
+    retry never becomes a second task (nor a second bill)."""
+    data = {
+        "org_id": org_id, "team_id": team_id,
+        "assigned_agent_id": agent_id, "type": type, "risk": risk,
+        "status": "queued", "payload": payload or {},
+        "idempotency_key": idempotency_key,
+    }
+    response = await db.svc.post(
+        "/tasks", json=data, headers={"Prefer": "return=representation"}
+    )
+    if response.status_code == 409:
+        existing = await db.svc.get(
+            "/tasks", params={"org_id": f"eq.{org_id}",
+                              "idempotency_key": f"eq.{idempotency_key}", "limit": "1"},
+        )
+        existing.raise_for_status()
+        rows = existing.json()
+        if not rows:
+            raise AgentError("Tarefa duplicada sem linha correspondente.")
+        return rows[0]
+    response.raise_for_status()
+    return response.json()[0]
+
+
 async def agent_runs(
     org_id: str, agent_id: str, limit: int = 50
 ) -> list[dict[str, Any]]:

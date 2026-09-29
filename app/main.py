@@ -31,6 +31,8 @@ from fastapi.templating import Jinja2Templates
 
 from app import agents as agents_svc
 from app.agents import AgentError
+from app.channels import evolution as evo
+from app.channels import intake as intake_mod
 from app.config import get_settings
 from app.db import db
 from app.prompt_templates import get_template, list_templates
@@ -588,6 +590,36 @@ async def team_kpi_value_save(
 
 def _json_error(message: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"ok": False, "error": message}, status_code=status)
+
+
+@app.post("/webhooks/evolution")
+async def evolution_webhook(request: Request, payload: dict[str, Any]) -> JSONResponse:
+    """WhatsApp inbound via Evolution API. Idempotent by WhatsApp message id: Evolution
+    retries non-2xx, and a retry replays into create_task's 409 path instead of a
+    second task. Returns 200 fast; the reply goes through the intake closure."""
+    cfg = evo.settings()
+    try:
+        evo.require_settings(cfg)
+    except evo.EvolutionNotConfigured as exc:
+        return _json_error(str(exc), 503)
+    if cfg["webhook_token"]:
+        token = request.query_params.get("token", "")
+        if token != cfg["webhook_token"]:
+            return _json_error("Assinatura inválida.", 403)
+    normalised = evo.normalise_event(payload)
+    if normalised is None:
+        return JSONResponse({"ok": True, "skipped": True})
+    org_id = await _org_id()
+    summary = await agents_svc.dashboard_summary(org_id)
+
+    async def reply(text: str) -> None:
+        await evo.send_text(to=normalised["channel_id"], text=text, cfg=cfg)
+
+    answer = await intake_mod.handle_event(
+        normalised, org_id=org_id, teams=summary["teams"],
+        agents=summary["agents"], reply=reply, enqueue=None,
+    )
+    return JSONResponse({"ok": True, "reply": (answer or "")[:200]})
 
 
 @app.get("/api/agents")
