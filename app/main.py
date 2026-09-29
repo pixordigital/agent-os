@@ -19,6 +19,7 @@ in Wave 2.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -33,6 +34,7 @@ from app import agents as agents_svc
 from app.agents import AgentError
 from app.channels import evolution as evo
 from app.channels import intake as intake_mod
+from app.channels import slack_api, slack_socket
 from app.config import get_settings
 from app.db import db
 from app.prompt_templates import get_template, list_templates
@@ -78,10 +80,50 @@ async def lifespan(app: FastAPI):  # noqa: ANN201 - FastAPI signature
         log.warning("postgrest schema reload notify failed: %s", exc)
     org = await agents_svc.ensure_default_org()
     log.info("org ready: %s (%s)", org["name"], org["slug"])
+    # Slack Socket Mode listener rides the API process: one outbound websocket, no
+    # public ingress needed. Without tokens it simply does not start — the API serves
+    # normally and the dashboard says nothing, because a missing bot is a setup state,
+    # not an incident. Worker execution (enqueue) still needs REDIS_URL + worker app.
+    listener: asyncio.Task | None = None
+    app_token = os.environ.get("SLACK_APP_TOKEN", "")
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if app_token and bot_token:
+        async def _on_slack_event(event: dict[str, Any]) -> None:
+            try:
+                org_id = str((await agents_svc.ensure_default_org())["id"])
+                teams = await agents_svc.list_teams(org_id)
+                agents = await agents_svc.list_agents(org_id)
+
+                async def reply(text: str) -> None:
+                    await slack_api.post_message(
+                        token=bot_token, channel=event.get("channel_id", ""),
+                        text=text, thread_ts=event.get("thread_ts"))
+
+                await intake_mod.handle_event(
+                    event, org_id=org_id, teams=teams, agents=agents,
+                    reply=reply, enqueue=None)
+            except Exception:  # noqa: BLE001 - listener never dies on one event
+                log.exception("slack intake failed on event %s",
+                              event.get("event_id", "?"))
+
+        async def _run_listener() -> None:
+            try:
+                await slack_socket.run_listener(
+                    app_token=app_token, bot_token=bot_token,
+                    on_event=_on_slack_event)
+            except Exception:  # noqa: BLE001 - loud log, API keeps serving
+                log.exception("slack listener stopped")
+
+        listener = asyncio.create_task(_run_listener(), name="slack-socket")
+        log.info("slack listener starting")
+    else:
+        log.info("slack listener off (SLACK_APP_TOKEN/SLACK_BOT_TOKEN unset)")
     log.info("agentos ready")
     try:
         yield
     finally:
+        if listener is not None:
+            listener.cancel()
         await db.disconnect()
 
 
