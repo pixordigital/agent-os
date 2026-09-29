@@ -21,6 +21,16 @@
   <div class="note">Zero execuções registradas. Este agente existe como configuração; a execução chega na onda 2. O zero aqui é ausência de execução, não ausência de leitura.</div>
   {% endif %}
 
+  <h2>Mês {{ month }} (medido)</h2>
+  <div class="grid">
+    <div class="card"><div class="k">Execuções</div><div class="v">{{ month_stats.runs }}</div></div>
+    <div class="card"><div class="k">Sucesso</div>
+      <div class="v {% if month_stats.success_rate is none %}dim{% elif month_stats.success_rate < 0.8 %}warn{% endif %}">
+        {{ '%.0f%%'|format(month_stats.success_rate * 100) if month_stats.success_rate is not none else '—' }}</div></div>
+    <div class="card"><div class="k">Custo</div>
+      <div class="v">R$ {{ '%.2f'|format(month_stats.cost_brl)|replace('.', ',') }}</div></div>
+  </div>
+
   <h2>Últimas execuções</h2>
   <div class="card" style="padding:4px 15px"><table class="cardtable">
     <thead><tr><th>Quando</th><th>Modelo</th><th>Ok</th><th>Tokens</th><th>Custo</th></tr></thead>

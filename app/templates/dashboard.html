@@ -11,6 +11,28 @@
   </div>
 </header>
 
+{% if goal %}
+<div class="card reveal" style="--i:4">
+  <div class="k">Meta da empresa · {{ month }}</div>
+  <div class="v">R$ {{ '%.2f'|format(goal.realized_brl)|replace('.', ',') }}
+    <small>de R$ {{ '%.2f'|format(goal.target_brl)|replace('.', ',') }} *manual</small></div>
+  {% if progress.pct is not none %}
+  <div class="goalbar"><i style="width:{{ (progress.pct * 100)|round(1) if progress.pct < 1 else 100 }}%"></i></div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card reveal dim" style="--i:4">Sem meta da empresa para {{ month }} — metas de time vivem na página de cada time.
+  <form class="block" method="post" action="/goal" style="margin-top:8px">
+    <input type="hidden" name="month" value="{{ month }}">
+    <div class="row">
+      <input type="text" name="target" inputmode="decimal" required placeholder="Meta R$"
+             style="flex:1;min-width:120px;background:var(--ink-sunken);color:var(--bone);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;font:inherit">
+      <button class="btn primary" type="submit">Definir meta</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <div class="sec reveal">Frota <span class="dim" style="font-weight:400">· <a href="/org">organograma</a></span></div>
 <div class="fleet reveal" style="--i:1" id="fleet">
   <span class="dim">…</span>

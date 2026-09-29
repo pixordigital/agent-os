@@ -22,6 +22,130 @@
 <div class="note">Sem execuções registradas. O time existe como estrutura; a execução chega na onda 2. Números vazios aqui significam ausência de execução, não ausência de leitura.</div>
 {% endif %}
 
+<h2>Meta do mês · {{ month }}</h2>
+{% if emsg %}<div class="err">{{ emsg }}</div>{% endif %}
+<div class="card">
+  {% if goal %}
+  <div class="k">Progresso (realizado *manual)</div>
+  <div class="v">R$ {{ '%.2f'|format(goal.realized_brl)|replace('.', ',') }}
+    <small>de R$ {{ '%.2f'|format(goal.target_brl)|replace('.', ',') }}</small></div>
+  {% if progress.pct is not none %}
+  <div class="goalbar"><i style="width:{{ (progress.pct * 100)|round(1) if progress.pct < 1 else 100 }}%"></i></div>
+  <div class="sub" style="margin-top:8px">{{ (progress.pct * 100)|round(1) }}% · faltam R$ {{ '%.2f'|format(progress.remaining)|replace('.', ',') }}</div>
+  {% endif %}
+  {% if goal.note %}<div class="note">{{ goal.note }}</div>{% endif %}
+  {% else %}
+  <div class="dim">Sem meta para {{ month }}. Defina abaixo — a meta muda todo mês.</div>
+  {% endif %}
+  <form class="block" method="post" action="/teams/{{ d.team.id }}/goal" style="margin-top:6px">
+    <input type="hidden" name="month" value="{{ month }}">
+    <div class="row">
+      <div style="flex:1;min-width:140px"><label for="g-target">Meta (R$)</label>
+        <input type="text" id="g-target" name="target" inputmode="decimal"
+               value="{{ '%.2f'|format(goal.target_brl)|replace('.', ',') if goal else '' }}"
+               placeholder="Ex.: 50.000,00" required></div>
+      <div style="flex:1;min-width:140px"><label for="g-real">Realizado (R$) *manual</label>
+        <input type="text" id="g-real" name="realized" inputmode="decimal"
+               value="{{ '%.2f'|format(goal.realized_brl)|replace('.', ',') if goal else '' }}"
+               placeholder="Ex.: 12.340,00"></div>
+    </div>
+    <label for="g-note">Nota</label>
+    <input type="text" id="g-note" name="note" value="{{ goal.note if goal else '' }}"
+           placeholder="Ex.: fecha com a campanha de inverno">
+    <div class="btnrow"><button class="btn primary" type="submit">Salvar meta</button>
+      <span class="dim" style="align-self:center">Mês: <code>{{ month }}</code></span></div>
+  </form>
+</div>
+
+<h2>KPIs do mês · {{ month }}</h2>
+<div class="card" style="padding:4px 15px"><table class="cardtable">
+  <thead><tr><th>Agente</th><th>Exec (medido)</th><th>Sucesso (medido)</th><th>Custo (medido)</th></tr></thead>
+  <tbody>
+  {% for a in d.members %}
+  {% set m = member_month.get(a.id, {}) %}
+  <tr>
+    <td data-label="Agente"><a class="plain" href="/agents/{{ a.id }}"><strong>{{ a.name }}</strong></a></td>
+    <td data-label="Exec">{{ m.get('runs', 0) }}</td>
+    <td data-label="Sucesso">{{ '%.0f%%'|format(m.success_rate * 100) if m.get('success_rate') is not none else '—' }}</td>
+    <td data-label="Custo">R$ {{ '%.2f'|format(m.get('cost_brl', 0))|replace('.', ',') }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="dim">Sem agentes neste time.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+{% if kpi_defs %}
+<h2>KPIs manuais · {{ month }}</h2>
+<div class="card" style="padding:4px 15px"><table class="cardtable">
+  <thead><tr><th>KPI</th><th>Agente</th><th>Valor</th><th>Meta</th></tr></thead>
+  <tbody>
+  {% for v in kpi_values %}
+  <tr>
+    <td data-label="KPI"><strong>{{ v.def_name }}</strong>{% if v.def_unit %} <span class="dim">{{ v.def_unit }}</span>{% endif %}</td>
+    <td data-label="Agente" class="dim">{% if not v.agent_id %}time{% else %}{% for a in d.members %}{% if a.id == v.agent_id %}{{ a.name }}{% endif %}{% endfor %}{% endif %}</td>
+    <td data-label="Valor">{{ v.value }}{% if v.def_unit %} {{ v.def_unit }}{% endif %} <span class="dim">*manual</span></td>
+    <td data-label="Meta">{{ v.def_target if v.def_target is not none else '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="dim">Nenhum valor lançado para {{ month }}.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+<div class="cols" style="grid-template-columns:1fr 1fr">
+<div>
+  <h2>Lançar valor</h2>
+  <div class="card">
+    {% if kpi_defs %}
+    <form class="block" method="post" action="/teams/{{ d.team.id }}/kpis/value">
+      <input type="hidden" name="month" value="{{ month }}">
+      <label for="v-def">KPI</label>
+      <select id="v-def" name="def_id" required>
+        {% for k in kpi_defs %}<option value="{{ k.id }}">{{ k.name }}{% if k.unit %} ({{ k.unit }}){% endif %}</option>{% endfor %}
+      </select>
+      <label for="v-agent">Agente (vazio = time)</label>
+      <select id="v-agent" name="agent_id">
+        <option value="">Time (agregado)</option>
+        {% for a in d.members %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+      </select>
+      <label for="v-val">Valor</label>
+      <input type="text" id="v-val" name="value" inputmode="decimal" required placeholder="Ex.: 12,5">
+      <div class="btnrow"><button class="btn primary" type="submit">Lançar</button></div>
+    </form>
+    {% else %}
+    <div class="dim">Crie o primeiro KPI ao lado — ex. <code>receita_fechada</code>, <code>reunioes</code>.</div>
+    {% endif %}
+  </div>
+</div>
+<div>
+  <h2>Criar KPI</h2>
+  <div class="card">
+    <form class="block" method="post" action="/teams/{{ d.team.id }}/kpis">
+      <input type="hidden" name="month" value="{{ month }}">
+      <label for="k-key">Identificador</label>
+      <input type="text" id="k-key" name="key" required placeholder="Ex.: receita_fechada">
+      <label for="k-name">Nome</label>
+      <input type="text" id="k-name" name="name" required minlength="2" placeholder="Ex.: Receita fechada">
+      <label for="k-unit">Unidade</label>
+      <input type="text" id="k-unit" name="unit" placeholder="Ex.: R$, %, un">
+      <label for="k-target">Meta mensal (opcional)</label>
+      <input type="text" id="k-target" name="target_monthly" inputmode="decimal" placeholder="Ex.: 30.000,00">
+      <div class="btnrow"><button class="btn primary" type="submit">Criar KPI</button></div>
+    </form>
+  </div>
+  <h2>Ver outro mês</h2>
+  <div class="card">
+    <form class="block" method="get" action="/teams/{{ d.team.id }}">
+      <label for="m-pick">Mês</label>
+      <input type="month" id="m-pick" name="month" value="{{ month }}" style="width:100%">
+      <div class="btnrow"><button class="btn" type="submit">Ver mês</button></div>
+    </form>
+  </div>
+</div>
+</div>
+
 <h2>Membros</h2>
 <div class="card" style="padding:4px 15px"><table class="cardtable">
   <thead><tr><th>Agente</th><th>Modelo</th><th>Estado</th><th>7d</th></tr></thead>

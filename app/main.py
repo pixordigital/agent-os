@@ -23,6 +23,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -149,8 +150,18 @@ async def api_status() -> dict[str, Any]:
 
 @app.get("/", response_class=Response)
 async def index(request: Request) -> Response:
+    org_id = await _org_id()
+    month = agents_svc.current_month()
+    try:
+        goal = await agents_svc.get_goal(org_id, None, month)
+    except Exception:  # noqa: BLE001 - no goals table yet means no goal, not a 500
+        goal = None
+    progress = agents_svc.goal_progress(
+        goal["target_brl"] if goal else 0, goal["realized_brl"] if goal else 0
+    )
     return _template(
-        "dashboard.html", request, tab="home", port=get_settings().port
+        "dashboard.html", request, tab="home", port=get_settings().port,
+        month=month, goal=goal, progress=progress,
     )
 
 
@@ -272,11 +283,19 @@ async def agent_detail_page(
     stats = await agents_svc.agent_stats(org_id, agent_id)
     runs = await agents_svc.agent_runs(org_id, agent_id)
     tasks = await agents_svc.agent_tasks(org_id, agent_id)
+    month = agents_svc.current_month()
+    try:
+        month_stats = agents_svc.summarize_runs(
+            await agents_svc.agent_month_runs(org_id, agent_id, month)
+        )
+    except Exception:  # noqa: BLE001 - pre-008 database reads as empty, not 500
+        month_stats = {"runs": 0, "success_rate": None, "cost_brl": 0}
     all_agents = await agents_svc.list_agents(org_id)
     return _template(
         "agent_detail.html", request, tab="agents", agent=agent, teams=teams,
         agents=all_agents, stats=stats, runs=runs, tasks=tasks,
         backends=agents_svc.BACKENDS, kinds=agents_svc.KINDS, error=error, form={},
+        month=month, month_stats=month_stats,
     )
 
 
@@ -323,10 +342,18 @@ async def agent_edit(
         runs = await agents_svc.agent_runs(org_id, agent_id)
         tasks = await agents_svc.agent_tasks(org_id, agent_id)
         all_agents = await agents_svc.list_agents(org_id)
+        month = agents_svc.current_month()
+        try:
+            month_stats = agents_svc.summarize_runs(
+                await agents_svc.agent_month_runs(org_id, agent_id, month)
+            )
+        except Exception:  # noqa: BLE001 - pre-008 database reads as empty, not 500
+            month_stats = {"runs": 0, "success_rate": None, "cost_brl": 0}
         return _template(
             "agent_detail.html", request, tab="agents", agent=agent, teams=teams,
             agents=all_agents, stats=stats, runs=runs, tasks=tasks,
             backends=agents_svc.BACKENDS, kinds=agents_svc.KINDS, error=str(exc), form=form,
+            month=month, month_stats=month_stats,
         )
     return RedirectResponse(f"/agents/{agent_id}", status_code=303)
 
@@ -388,7 +415,9 @@ async def teams_page(
 
 
 @app.get("/teams/{team_id}", response_class=Response)
-async def team_detail_page(request: Request, team_id: str) -> Response:
+async def team_detail_page(
+    request: Request, team_id: str, month: str = "", emsg: str = ""
+) -> Response:
     """Team dashboard: members, 24h/7d runs and cost, autonomy mix, models in use, backlog by
     status, SLA breaches. Every number measured; empty sections say what is missing instead of
     showing zero as if it meant something."""
@@ -397,10 +426,56 @@ async def team_detail_page(request: Request, team_id: str) -> Response:
         detail = await agents_svc.team_detail(org_id, team_id)
     except AgentError:
         return RedirectResponse("/teams", status_code=303)
+    month = month or agents_svc.current_month()
+    try:
+        agents_svc.month_bounds(month)
+    except AgentError:
+        month = agents_svc.current_month()
+    try:
+        goal = await agents_svc.get_goal(org_id, team_id, month)
+        defs = await agents_svc.list_kpi_defs(org_id, team_id)
+        values = await agents_svc.kpi_values_for(org_id, month, team_id=team_id)
+        month_runs = await agents_svc.team_month_runs(
+            org_id, {m["id"] for m in detail["members"]}, month
+        )
+    except Exception:  # noqa: BLE001 - pre-008 database reads as empty, not 500
+        goal, defs, values, month_runs = None, [], [], {}
+    member_month = {
+        m["id"]: agents_svc.summarize_runs(month_runs.get(m["id"], []))
+        for m in detail["members"]
+    }
+    progress = agents_svc.goal_progress(
+        goal["target_brl"] if goal else 0, goal["realized_brl"] if goal else 0
+    )
     events = await agents_svc.recent_events(org_id, team_id=team_id, limit=15)
     return _template(
-        "team_detail.html", request, tab="teams", detail=detail, events=events
+        "team_detail.html", request, tab="teams", detail=detail, events=events,
+        month=month, goal=goal, progress=progress, kpi_defs=defs,
+        kpi_values=values, member_month=member_month, emsg=emsg,
     )
+
+
+@app.post("/goal", response_class=Response)
+async def org_goal_save(
+    request: Request,
+    month: str = Form(default=""),
+    target: str = Form(default=""),
+    realized: str = Form(default=""),
+    note: str = Form(default=""),
+) -> Response:
+    """Company-wide goal (team_id None). Same upsert semantics as the team form."""
+    org_id = await _org_id()
+    month = month or agents_svc.current_month()
+    try:
+        await agents_svc.set_goal(
+            org_id, None, month,
+            agents_svc.parse_brl(target),
+            agents_svc.parse_brl(realized) if realized.strip() else None,
+            note,
+        )
+    except AgentError:
+        pass
+    return RedirectResponse("/", status_code=303)
 
 
 @app.post("/teams", response_class=Response)
@@ -430,6 +505,82 @@ async def departments_create(
     except AgentError as exc:
         return await teams_page(request, dept_error=str(exc))
     return RedirectResponse("/teams", status_code=303)
+
+
+@app.post("/teams/{team_id}/goal", response_class=Response)
+async def team_goal_save(
+    request: Request,
+    team_id: str,
+    month: str = Form(default=""),
+    target: str = Form(default=""),
+    realized: str = Form(default=""),
+    note: str = Form(default=""),
+) -> Response:
+    """Monthly goal upsert. Errors ride back as ?emsg= so the detail page shows them
+    next to the form that caused them, instead of a generic teams-page banner."""
+    org_id = await _org_id()
+    month = month or agents_svc.current_month()
+    try:
+        await agents_svc.set_goal(
+            org_id, team_id, month,
+            agents_svc.parse_brl(target),
+            agents_svc.parse_brl(realized) if realized.strip() else None,
+            note,
+        )
+        return RedirectResponse(f"/teams/{team_id}?month={month}", status_code=303)
+    except AgentError as exc:
+        return RedirectResponse(
+            f"/teams/{team_id}?month={month}&emsg={quote(str(exc))}", status_code=303
+        )
+
+
+@app.post("/teams/{team_id}/kpis", response_class=Response)
+async def team_kpi_create(
+    request: Request,
+    team_id: str,
+    key: str = Form(default=""),
+    name: str = Form(default=""),
+    unit: str = Form(default=""),
+    target_monthly: str = Form(default=""),
+    month: str = Form(default=""),
+) -> Response:
+    org_id = await _org_id()
+    month = month or agents_svc.current_month()
+    try:
+        await agents_svc.create_kpi_def(
+            org_id, team_id, key, name, unit,
+            agents_svc.parse_brl(target_monthly) if target_monthly.strip() else None,
+        )
+        return RedirectResponse(f"/teams/{team_id}?month={month}", status_code=303)
+    except AgentError as exc:
+        return RedirectResponse(
+            f"/teams/{team_id}?month={month}&emsg={quote(str(exc))}", status_code=303
+        )
+
+
+@app.post("/teams/{team_id}/kpis/value", response_class=Response)
+async def team_kpi_value_save(
+    request: Request,
+    team_id: str,
+    def_id: str = Form(default=""),
+    agent_id: str = Form(default=""),
+    month: str = Form(default=""),
+    value: str = Form(default=""),
+) -> Response:
+    org_id = await _org_id()
+    month = month or agents_svc.current_month()
+    try:
+        if not def_id:
+            raise AgentError("Escolha o KPI.")
+        await agents_svc.set_kpi_value(
+            org_id, team_id, def_id, agent_id or None, month,
+            agents_svc.parse_brl(value),
+        )
+        return RedirectResponse(f"/teams/{team_id}?month={month}", status_code=303)
+    except AgentError as exc:
+        return RedirectResponse(
+            f"/teams/{team_id}?month={month}&emsg={quote(str(exc))}", status_code=303
+        )
 
 
 # ------------------------------------------------------------------ JSON API (workers, Slack, future frontends)
@@ -493,6 +644,30 @@ async def api_agent_delete(agent_id: str) -> JSONResponse:
     except AgentError as exc:
         return _json_error(str(exc), 404)
     return JSONResponse({"ok": True, "agent": agent})
+
+
+@app.get("/api/teams/{team_id}/kpis")
+async def api_team_kpis(team_id: str, month: str = "") -> JSONResponse:
+    """Goal + progress + defs + manual values for one team/month. Auto month
+    summaries stay server-side in team_detail — one endpoint, no N+1 for clients."""
+    org_id = await _org_id()
+    month = month or agents_svc.current_month()
+    try:
+        agents_svc.month_bounds(month)
+        goal = await agents_svc.get_goal(org_id, team_id, month)
+    except AgentError as exc:
+        return _json_error(str(exc))
+    progress = agents_svc.goal_progress(
+        goal["target_brl"] if goal else 0, goal["realized_brl"] if goal else 0
+    )
+    return JSONResponse({
+        "ok": True,
+        "month": month,
+        "goal": goal,
+        "progress": progress,
+        "defs": await agents_svc.list_kpi_defs(org_id, team_id),
+        "values": await agents_svc.kpi_values_for(org_id, month, team_id=team_id),
+    })
 
 
 @app.get("/api/prompt-templates")

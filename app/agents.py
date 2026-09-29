@@ -608,3 +608,260 @@ async def dashboard_summary(org_id: str) -> dict[str, Any]:
         "runs_24h": len(runs),
         "cost_24h": round(sum(float(r.get("cost_brl") or 0) for r in runs), 4),
     }
+
+
+# ------------------------------------------------------------------ goals & KPIs
+
+
+def current_month(now: dt.datetime | None = None) -> str:
+    """Current month as YYYY-MM. Injectable clock so progress math is testable."""
+    now = now or dt.datetime.now(dt.UTC)
+    return f"{now.year:04d}-{now.month:02d}"
+
+
+def month_bounds(month: str) -> tuple[str, str]:
+    """UTC [start, end) ISO bounds for a YYYY-MM month. Raises AgentError, never 500."""
+    try:
+        year, mon = int(month[:4]), int(month[5:7])
+        assert len(month) == 7 and month[4] == "-" and 1 <= mon <= 12
+    except (ValueError, AssertionError, IndexError):
+        raise AgentError(f"Mês inválido: '{month}'. Use AAAA-MM.") from None
+    start = dt.datetime(year, mon, 1, tzinfo=dt.UTC)
+    end = (start + dt.timedelta(days=32)).replace(day=1)
+    return start.isoformat(), end.isoformat()
+
+
+def parse_brl(text: str) -> float:
+    """Parse owner-typed money: '1.234,56', '1234,56' and '1234.56' all mean the same.
+    Money input is the one place PT-BR formatting meets storage, so it owns a helper."""
+    cleaned = (text or "").strip().replace("R$", "").strip()
+    if "," in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    try:
+        value = float(cleaned)
+    except ValueError:
+        raise AgentError(f"Valor inválido: '{text}'.") from None
+    if value < 0:
+        raise AgentError("Valor não pode ser negativo.")
+    return round(value, 2)
+
+
+def summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measured month aggregates for one agent. Pure: the same rows always give the
+    same numbers, which is what makes KPI rows auditable against agent_runs."""
+    total = len(runs)
+    return {
+        "runs": total,
+        "success_rate": (
+            sum(1 for r in runs if r.get("success") is True) / total if total else None
+        ),
+        "cost_brl": round(sum(float(r.get("cost_brl") or 0) for r in runs), 4),
+    }
+
+
+def goal_progress(target_brl: float, realized_brl: float) -> dict[str, Any]:
+    """Progress math in one place so every surface (team card, dashboard strip, API)
+    reports the same percentage. Zero target means 'no goal', never 0% or crash."""
+    target = float(target_brl or 0)
+    realized = float(realized_brl or 0)
+    if target <= 0:
+        return {"pct": None, "remaining": None}
+    return {
+        "pct": round(min(realized / target, 9.999), 4),
+        "remaining": round(max(target - realized, 0), 2),
+    }
+
+
+def _team_match(params: dict[str, Any], team_id: str | None) -> dict[str, Any]:
+    """Org-wide rows carry team_id NULL; PostgREST filters those with is.null."""
+    params["team_id"] = f"eq.{team_id}" if team_id else "is.null"
+    return params
+
+
+async def get_goal(
+    org_id: str, team_id: str | None, month: str
+) -> dict[str, Any] | None:
+    month_bounds(month)
+    params = _team_match({"org_id": f"eq.{org_id}", "month": f"eq.{month}"}, team_id)
+    response = await db.svc.get("/goals", params={**params, "limit": "1"})
+    response.raise_for_status()
+    rows = response.json()
+    return rows[0] if rows else None
+
+
+async def set_goal(
+    org_id: str,
+    team_id: str | None,
+    month: str,
+    target_brl: float,
+    realized_brl: float | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    """Upsert by (team-or-org, month): PATCH when the row exists, POST when not.
+    Patch-or-post instead of on_conflict because the uniqueness lives in an expression
+    index, which PostgREST cannot name as a conflict target."""
+    month_bounds(month)
+    existing = await get_goal(org_id, team_id, month)
+    data: dict[str, Any] = {
+        "target_brl": target_brl,
+        "note": (note or "").strip(),
+    }
+    data["realized_brl"] = (
+        realized_brl if realized_brl is not None
+        else float(existing["realized_brl"]) if existing else 0
+    )
+    if existing:
+        response = await db.svc.patch(
+            "/goals",
+            params=_team_match(
+                {"org_id": f"eq.{org_id}", "month": f"eq.{month}"}, team_id
+            ),
+            json=data,
+            headers={"Prefer": "return=representation"},
+        )
+        response.raise_for_status()
+        return response.json()[0]
+    response = await db.svc.post(
+        "/goals",
+        json={"org_id": org_id, "team_id": team_id, "month": month, **data},
+        headers={"Prefer": "return=representation"},
+    )
+    response.raise_for_status()
+    return response.json()[0]
+
+
+async def list_kpi_defs(
+    org_id: str, team_id: str | None = None
+) -> list[dict[str, Any]]:
+    """Org-wide defs apply to every team; team defs add on top. Fetched once and split
+    in Python — dozens of rows max, not worth two round-trips."""
+    response = await db.svc.get(
+        "/kpi_defs",
+        params={"org_id": f"eq.{org_id}", "order": "name", "limit": "200"},
+    )
+    response.raise_for_status()
+    defs = response.json()
+    if team_id is None:
+        return defs
+    return [d for d in defs if not d.get("team_id") or d["team_id"] == team_id]
+
+
+async def create_kpi_def(
+    org_id: str, team_id: str | None, key: str, name: str,
+    unit: str = "", target_monthly: float | None = None,
+) -> dict[str, Any]:
+    key = _check_key(key)
+    name = (name or "").strip()
+    if len(name) < 2:
+        raise AgentError("O KPI precisa de um nome (mínimo 2 letras).")
+    response = await db.svc.post(
+        "/kpi_defs",
+        json={
+            "org_id": org_id, "team_id": team_id, "key": key, "name": name,
+            "unit": (unit or "").strip()[:20],
+            "target_monthly": target_monthly, "source": "manual",
+        },
+        headers={"Prefer": "return=representation"},
+    )
+    if response.status_code == 409:
+        raise AgentError(f"Já existe um KPI com o identificador '{key}' nesta empresa.")
+    response.raise_for_status()
+    return response.json()[0]
+
+
+async def set_kpi_value(
+    org_id: str, team_id: str | None, def_id: str, agent_id: str | None,
+    month: str, value: float,
+) -> dict[str, Any]:
+    """Upsert one reading. agent_id None writes the team/org aggregate row."""
+    month_bounds(month)
+    base = {"org_id": f"eq.{org_id}", "def_id": f"eq.{def_id}",
+            "month": f"eq.{month}"}
+    base["agent_id"] = f"eq.{agent_id}" if agent_id else "is.null"
+    existing = await db.svc.get("/kpi_values", params={**base, "limit": "1"})
+    existing.raise_for_status()
+    rows = existing.json()
+    if rows:
+        response = await db.svc.patch(
+            "/kpi_values", params=base, json={"value": value},
+            headers={"Prefer": "return=representation"},
+        )
+        response.raise_for_status()
+        return response.json()[0]
+    response = await db.svc.post(
+        "/kpi_values",
+        json={"org_id": org_id, "team_id": team_id, "def_id": def_id,
+              "agent_id": agent_id, "month": month, "value": value,
+              "source": "manual"},
+        headers={"Prefer": "return=representation"},
+    )
+    response.raise_for_status()
+    return response.json()[0]
+
+
+async def kpi_values_for(
+    org_id: str, month: str, team_id: str | None = None,
+    agent_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Manual readings for a scope + month, each carrying its def name/unit so the
+    template never joins in Jinja."""
+    month_bounds(month)
+    params: dict[str, Any] = {"org_id": f"eq.{org_id}", "month": f"eq.{month}"}
+    if team_id:
+        params["team_id"] = f"eq.{team_id}"
+    if agent_id:
+        params["agent_id"] = f"eq.{agent_id}"
+    response = await db.svc.get("/kpi_values", params={**params, "limit": "500"})
+    response.raise_for_status()
+    values = response.json()
+    by_id = {d["id"]: d for d in await list_kpi_defs(org_id)}
+    for value in values:
+        definition = by_id.get(value.get("def_id") or "", {})
+        value["def_name"] = definition.get("name", value.get("def_id"))
+        value["def_unit"] = definition.get("unit", "")
+        value["def_target"] = definition.get("target_monthly")
+    return values
+
+
+async def agent_month_runs(
+    org_id: str, agent_id: str, month: str
+) -> list[dict[str, Any]]:
+    """This month's runs for auto KPIs. Same table the 24h stats read — one source."""
+    start, end = month_bounds(month)
+    response = await db.svc.get(
+        "/agent_runs",
+        params={
+            "org_id": f"eq.{org_id}",
+            "agent_id": f"eq.{agent_id}",
+            "created_at": f"gte.{start}",
+            "and": f"(created_at.lt.{end})",
+            "order": "created_at.desc",
+            "limit": "2000",
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def team_month_runs(
+    org_id: str, member_ids: set[str], month: str
+) -> dict[str, list[dict[str, Any]]]:
+    """One query for the whole team, split by member in Python — same pattern as
+    team_detail's 7d window, so month KPIs cost one round-trip however big the team."""
+    start, end = month_bounds(month)
+    response = await db.svc.get(
+        "/agent_runs",
+        params={
+            "org_id": f"eq.{org_id}",
+            "created_at": f"gte.{start}",
+            "and": f"(created_at.lt.{end})",
+            "order": "created_at.desc",
+            "limit": "5000",
+        },
+    )
+    response.raise_for_status()
+    by_agent: dict[str, list[dict[str, Any]]] = {}
+    for run in response.json():
+        if run.get("agent_id") in member_ids:
+            by_agent.setdefault(run["agent_id"], []).append(run)
+    return by_agent

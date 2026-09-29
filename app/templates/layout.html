@@ -146,6 +146,11 @@
     .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;
             border: 1px solid var(--line); border-radius: 99px; padding: 5px 13px;
             color: var(--bone-dim); background: rgba(236, 233, 224, 0.03); }
+    .goalbar { height: 8px; background: var(--ink-sunken); border: 1px solid var(--line-soft);
+               border-radius: 99px; overflow: hidden; margin-top: 12px; }
+    .goalbar i { display: block; height: 100%; border-radius: 99px;
+                 background: linear-gradient(90deg, var(--brass-deep), var(--brass));
+                 transition: width .8s var(--ease-out); }
     .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
     .dim { color: var(--bone-dim); }
 
