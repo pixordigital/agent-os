@@ -54,3 +54,4 @@ Detalhe e motivos em `supabase/bootstrap/README.md`.
 | Fila não anda, worker vivo | lease preso (`lease_until` futuro de worker morto) | expira sozinho em 5min; não mexer à mão |
 | Disco >85% | imagens acumuladas | `docker image prune -af` (liberou 640MB da última vez; 21GB eram reclamáveis) |
 | RAM esgotada | stack completa do Supabase não cabe (7.6Gi) | NÃO subir os 14 containers; o enxuto (db+rest) é o teto até a onda de infra |
+| Boot morre com `gaierror` no `db.connect()` | app na rede `coolify`, Supabase só na rede do compose (`jo4x4th…`) | terminal do servidor: `docker network connect coolify supabase-db-jo4x4th4fvvweplwink2ncpp` (+ `supabase-rest-…`); redeploy. Refazer se o serviço supabase for recriado (o attach extra não sobrevive a recreate) |
